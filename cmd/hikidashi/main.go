@@ -21,6 +21,7 @@ var commands = []command{
 	{name: "hook", summary: "record the session state and inject notes from a Claude Code hook input", run: runHook},
 	{name: "notes", summary: "open the notes of the current drawer in $EDITOR", run: runNotes},
 	{name: "open", summary: "choose a session with fzf and switch to its tmux pane", run: runOpen},
+	{name: "status", summary: "print the number of sessions waiting for input, for the tmux status bar", run: runStatus},
 }
 
 func main() {
