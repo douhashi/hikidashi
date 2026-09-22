@@ -70,9 +70,11 @@ func (f fixture) input(event string, extra map[string]string) string {
 	return string(data)
 }
 
-// run は env に overrides を重ねた環境で Run を呼ぶ。
-func (f fixture) run(stdin string, overrides map[string]string) error {
-	return Run(f.dataRoot, strings.NewReader(stdin), getenv(overrides), now)
+// run は env に overrides を重ねた環境で Run を呼び、stdout に書かれた中身を返す。
+func (f fixture) run(stdin string, overrides map[string]string) (string, error) {
+	var stdout strings.Builder
+	err := Run(f.dataRoot, strings.NewReader(stdin), &stdout, getenv(overrides), now)
+	return stdout.String(), err
 }
 
 func getenv(overrides map[string]string) func(string) string {
@@ -179,7 +181,7 @@ func TestRunFollowsStateModel(t *testing.T) {
 				}
 				before := readIfExists(t, f.sessionFile())
 
-				if err := f.run(f.input(tc.event, tc.extra), nil); err != nil {
+				if _, err := f.run(f.input(tc.event, tc.extra), nil); err != nil {
 					t.Fatalf("Run: %v", err)
 				}
 
@@ -229,7 +231,7 @@ func (f fixture) assertOutcome(t *testing.T, want outcome, before *string) {
 func TestRunSessionStartRegistersDrawer(t *testing.T) {
 	f := newFixture(t)
 
-	if err := f.run(f.input("SessionStart", map[string]string{"source": "startup"}), nil); err != nil {
+	if _, err := f.run(f.input("SessionStart", map[string]string{"source": "startup"}), nil); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
@@ -242,7 +244,7 @@ func TestRunSessionStartRegistersDrawer(t *testing.T) {
 func TestRunWritesFilesReadableOnlyByOwner(t *testing.T) {
 	f := newFixture(t)
 
-	if err := f.run(f.input("SessionStart", map[string]string{"source": "startup"}), nil); err != nil {
+	if _, err := f.run(f.input("SessionStart", map[string]string{"source": "startup"}), nil); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
@@ -261,13 +263,146 @@ func TestRunWithoutTmuxPaneRegistersButDoesNotRecord(t *testing.T) {
 		f.input("UserPromptSubmit", nil),
 		f.input("Stop", nil),
 	} {
-		if err := f.run(in, noPane); err != nil {
+		if _, err := f.run(in, noPane); err != nil {
 			t.Fatalf("Run(%s): %v", in, err)
 		}
 	}
 
 	testutil.ReadFile(t, filepath.Join(f.drawer.Dir, "drawer.json"))
 	testutil.AssertNotExist(t, filepath.Dir(f.sessionFile()))
+}
+
+// wireOutput は Claude Code が SessionStart の stdout に受け付ける JSON の形。
+type wireOutput struct {
+	HookSpecificOutput struct {
+		HookEventName     string `json:"hookEventName"`
+		AdditionalContext string `json:"additionalContext"`
+	} `json:"hookSpecificOutput"`
+}
+
+// assertInjected は stdout がちょうど 1 つの SessionStart の JSON で、
+// additionalContext が引き出し名と notes.md のパスを含む見出しと、本文 notes から成ることを確かめる。
+func (f fixture) assertInjected(t *testing.T, stdout, notes string) {
+	t.Helper()
+	dec := json.NewDecoder(strings.NewReader(stdout))
+	dec.DisallowUnknownFields()
+	var out wireOutput
+	if err := dec.Decode(&out); err != nil {
+		t.Fatalf("decode stdout %q: %v", stdout, err)
+	}
+	if dec.More() {
+		t.Errorf("stdout = %q, want a single JSON object", stdout)
+	}
+	if got := out.HookSpecificOutput.HookEventName; got != "SessionStart" {
+		t.Errorf("hookEventName = %q, want SessionStart", got)
+	}
+	context := out.HookSpecificOutput.AdditionalContext
+	heading, body, ok := strings.Cut(context, "\n\n")
+	if !ok || body != notes {
+		t.Errorf("additionalContext = %q, want a heading followed by %q", context, notes)
+	}
+	for _, want := range []string{f.drawer.Name, f.drawer.NotesPath()} {
+		if !strings.Contains(heading, want) {
+			t.Errorf("heading = %q, want it to contain %q", heading, want)
+		}
+	}
+}
+
+func TestRunSessionStartInjectsNotes(t *testing.T) {
+	const notes = "# api\n\n- staging の DB は触らない\n- {\"json\": \"looking\"} でも本文のまま\n"
+	for _, source := range []string{"startup", "resume", "clear", "fork", "compact"} {
+		for pane, overrides := range map[string]map[string]string{
+			"in tmux":      nil,
+			"outside tmux": {"TMUX_PANE": ""},
+		} {
+			t.Run(source+"/"+pane, func(t *testing.T) {
+				f := newFixture(t)
+				testutil.WriteFile(t, f.drawer.NotesPath(), notes)
+
+				stdout, err := f.run(f.input("SessionStart", map[string]string{"source": source}), overrides)
+
+				if err != nil {
+					t.Fatalf("Run: %v", err)
+				}
+				f.assertInjected(t, stdout, notes)
+			})
+		}
+	}
+}
+
+func TestRunSessionStartInjectsNothingWithoutNotes(t *testing.T) {
+	for name, notes := range map[string]*string{
+		"no notes.md":     nil,
+		"whitespace only": new(" \n\t\n"),
+	} {
+		for _, source := range []string{"startup", "compact"} {
+			t.Run(name+"/"+source, func(t *testing.T) {
+				f := newFixture(t)
+				if notes != nil {
+					testutil.WriteFile(t, f.drawer.NotesPath(), *notes)
+				}
+
+				stdout, err := f.run(f.input("SessionStart", map[string]string{"source": source}), nil)
+
+				if err != nil {
+					t.Fatalf("Run: %v", err)
+				}
+				if stdout != "" {
+					t.Errorf("stdout = %q, want empty", stdout)
+				}
+			})
+		}
+	}
+}
+
+func TestRunOtherEventsDoNotInjectNotes(t *testing.T) {
+	f := newFixture(t)
+	testutil.WriteFile(t, f.drawer.NotesPath(), "notes\n")
+
+	for _, in := range []string{
+		f.input("UserPromptSubmit", nil),
+		f.input("Stop", nil),
+		f.input("SessionEnd", nil),
+	} {
+		stdout, err := f.run(in, nil)
+
+		if err != nil {
+			t.Errorf("Run(%s): %v", in, err)
+		}
+		if stdout != "" {
+			t.Errorf("Run(%s) stdout = %q, want empty", in, stdout)
+		}
+	}
+}
+
+func TestRunInjectsNotesEvenWhenRecordingFails(t *testing.T) {
+	f := newFixture(t)
+	testutil.WriteFile(t, f.drawer.NotesPath(), "notes\n")
+
+	stdout, err := f.run(f.input("SessionStart", map[string]string{"source": "startup"}), map[string]string{"CLAUDE_PID": "abc"})
+
+	if err == nil {
+		t.Error("Run succeeded, want the recording error")
+	}
+	f.assertInjected(t, stdout, "notes\n")
+}
+
+func TestRunRecordsSessionEvenWhenInjectionFails(t *testing.T) {
+	f := newFixture(t)
+	// notes.md がディレクトリなら読めない。
+	if err := os.MkdirAll(f.drawer.NotesPath(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, err := f.run(f.input("SessionStart", map[string]string{"source": "startup"}), nil)
+
+	if err == nil {
+		t.Error("Run succeeded, want the injection error")
+	}
+	if stdout != "" {
+		t.Errorf("stdout = %q, want empty", stdout)
+	}
+	f.assertOutcome(t, startIdle, nil)
 }
 
 func TestRunSessionEndRemovesFilesOfTheSession(t *testing.T) {
@@ -281,7 +416,7 @@ func TestRunSessionEndRemovesFilesOfTheSession(t *testing.T) {
 		testutil.WriteFile(t, p, "{}")
 	}
 
-	if err := f.run(f.input("SessionEnd", map[string]string{"reason": "prompt_input_exit"}), nil); err != nil {
+	if _, err := f.run(f.input("SessionEnd", map[string]string{"reason": "prompt_input_exit"}), nil); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
@@ -293,13 +428,18 @@ func TestRunSessionEndRemovesFilesOfTheSession(t *testing.T) {
 
 func TestRunDisabledDoesNotReadInput(t *testing.T) {
 	f := newFixture(t)
+	testutil.WriteFile(t, f.drawer.NotesPath(), "notes\n")
+	var stdout strings.Builder
 
-	err := Run(f.dataRoot, unreadable{t}, getenv(map[string]string{"HIKIDASHI_DISABLE": "1"}), now)
+	err := Run(f.dataRoot, unreadable{t}, &stdout, getenv(map[string]string{"HIKIDASHI_DISABLE": "1"}), now)
 
 	if err != nil {
 		t.Errorf("Run: %v", err)
 	}
-	testutil.AssertEntries(t, f.dataRoot)
+	if stdout.Len() != 0 {
+		t.Errorf("stdout = %q, want empty", stdout.String())
+	}
+	testutil.AssertEntries(t, f.drawer.Dir, "notes.md")
 }
 
 // unreadable は読まれたらテストを失敗させる stdin。
@@ -314,10 +454,14 @@ func TestRunOutsideGitDoesNothing(t *testing.T) {
 	f := newFixture(t)
 	f.repo = t.TempDir()
 
-	if err := f.run(f.input("SessionStart", map[string]string{"source": "startup"}), nil); err != nil {
+	stdout, err := f.run(f.input("SessionStart", map[string]string{"source": "startup"}), nil)
+
+	if err != nil {
 		t.Errorf("Run: %v", err)
 	}
-
+	if stdout != "" {
+		t.Errorf("stdout = %q, want empty", stdout)
+	}
 	testutil.AssertEntries(t, f.dataRoot)
 }
 
@@ -327,11 +471,10 @@ func TestRunIgnoredEventsDoNotStartGit(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 
 	for _, in := range []string{
-		f.input("SessionStart", map[string]string{"source": "compact"}),
 		f.input("Notification", map[string]string{"notification_type": "idle_prompt"}),
 		f.input("PreToolUse", nil),
 	} {
-		if err := f.run(in, nil); err != nil {
+		if _, err := f.run(in, nil); err != nil {
 			t.Errorf("Run(%s): %v", in, err)
 		}
 	}
@@ -341,7 +484,7 @@ func TestRunReportsGitFailureWithEventAndSession(t *testing.T) {
 	f := newFixture(t)
 	t.Setenv("PATH", t.TempDir())
 
-	err := f.run(f.input("Stop", nil), nil)
+	_, err := f.run(f.input("Stop", nil), nil)
 
 	if err == nil || !strings.HasPrefix(err.Error(), "Stop "+sessionID+": ") {
 		t.Errorf("Run = %v, want an error prefixed with the event and session", err)
@@ -391,7 +534,7 @@ func TestRunRejectsInvalidInput(t *testing.T) {
 		"traversal on unknown event": with(map[string]any{"session_id": "../x", "hook_event_name": "PreToolUse"}),
 	} {
 		t.Run(name, func(t *testing.T) {
-			if err := f.run(in, nil); err == nil {
+			if _, err := f.run(in, nil); err == nil {
 				t.Error("Run succeeded, want an error")
 			}
 			testutil.AssertEntries(t, f.dataRoot)
@@ -404,7 +547,7 @@ func TestRunRejectsNonIntegerClaudePID(t *testing.T) {
 		t.Run(pid, func(t *testing.T) {
 			f := newFixture(t)
 
-			err := f.run(f.input("UserPromptSubmit", nil), map[string]string{"CLAUDE_PID": pid})
+			_, err := f.run(f.input("UserPromptSubmit", nil), map[string]string{"CLAUDE_PID": pid})
 
 			if err == nil {
 				t.Error("Run succeeded, want an error")

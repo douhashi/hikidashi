@@ -101,3 +101,8 @@ func (d Drawer) Register() error {
 	d.CreatedAt = time.Now()
 	return jsonfile.Write(file, d)
 }
+
+// NotesPath は引き出しの備忘録（notes.md）のパスを返す。ファイルがあるとは限らない。
+func (d Drawer) NotesPath() string {
+	return filepath.Join(d.Dir, "notes.md")
+}

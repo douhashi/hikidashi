@@ -13,15 +13,15 @@ import (
 
 // runHook は hikidashi hook の入口。Claude Code を妨げないよう、panic を含むどの失敗でも exit 0 で終え、
 // エラーはデータルートの hikidashi.log にだけ残す（docs/development/architecture.md の「設計原則」4）。
-func runHook(_ []string, stdin io.Reader, _, stderr io.Writer) int {
-	if err := recordHook(stdin); err != nil {
+func runHook(_ []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	if err := handleHook(stdin, stdout); err != nil {
 		logHookError(stderr, fmt.Sprintf("%s hook: %v\n", time.Now().Format(time.RFC3339), err))
 	}
 	return 0
 }
 
-// recordHook は hook.Run を既定のデータルートで呼び、panic もエラーとして返す。
-func recordHook(stdin io.Reader) (err error) {
+// handleHook は hook.Run を既定のデータルートで呼び、panic もエラーとして返す。
+func handleHook(stdin io.Reader, stdout io.Writer) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("panic: %v", r)
@@ -31,7 +31,7 @@ func recordHook(stdin io.Reader) (err error) {
 	if err != nil {
 		return err
 	}
-	return hook.Run(root, stdin, os.Getenv, time.Now())
+	return hook.Run(root, stdin, stdout, os.Getenv, time.Now())
 }
 
 // logHookError は line をログに追記する。ログにも書けなければ、line と書けなかった理由を stderr に出す。

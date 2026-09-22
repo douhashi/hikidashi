@@ -216,3 +216,11 @@ func expectedDrawer(t *testing.T, dataRoot, root string) Drawer {
 		Name: name,
 	}
 }
+
+func TestNotesPathIsInDrawerDir(t *testing.T) {
+	d := Drawer{Dir: "/data/drawers/api-3f2a9c1b"}
+
+	if got, want := d.NotesPath(), "/data/drawers/api-3f2a9c1b/notes.md"; got != want {
+		t.Errorf("NotesPath = %q, want %q", got, want)
+	}
+}
