@@ -3,11 +3,12 @@
 package session
 
 import (
-	"encoding/json"
 	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/douhashi/hikidashi/internal/jsonfile"
@@ -37,22 +38,47 @@ type Session struct {
 	StartedAt      time.Time `json:"started_at"`
 }
 
+// validID はファイル名に使える session_id。パスの区切り・`.`・glob のメタ文字を含まない。
+var validID = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+
+// ValidID は id がファイル名に使える session_id（`[A-Za-z0-9_-]+`）かを返す。
+// それ以外の id でファイルを扱うと、パス横断や glob の誤爆を起こす。
+func ValidID(id string) bool {
+	return validID.MatchString(id)
+}
+
 // Read は引き出し drawerDir にある id のセッション状態を返す。
 // ファイルが無ければ ok=false を返す。壊れたファイルも書き直すべきものとして、無いものと同じに扱う。
 func Read(drawerDir, id string) (Session, bool, error) {
-	data, err := os.ReadFile(file(drawerDir, id))
+	return jsonfile.Read[Session](file(drawerDir, id))
+}
+
+// List は引き出し drawerDir にあるセッション状態を、ファイル名の順にすべて返す。
+// 読むのは <session_id>.json だけで、壊れたファイルと中身の session_id がファイル名と食い違うファイルは飛ばす。
+func List(drawerDir string) ([]Session, error) {
+	entries, err := os.ReadDir(dir(drawerDir))
 	if errors.Is(err, fs.ErrNotExist) {
-		return Session{}, false, nil
+		return nil, nil
 	}
 	if err != nil {
-		return Session{}, false, err
+		return nil, err
 	}
 
-	var s Session
-	if err := json.Unmarshal(data, &s); err != nil {
-		return Session{}, false, nil
+	var sessions []Session
+	for _, e := range entries {
+		id, ok := strings.CutSuffix(e.Name(), ".json")
+		if !ok || !ValidID(id) {
+			continue
+		}
+		s, ok, err := Read(drawerDir, id)
+		if err != nil {
+			return nil, err
+		}
+		if ok && s.SessionID == id {
+			sessions = append(sessions, s)
+		}
 	}
-	return s, true, nil
+	return sessions, nil
 }
 
 // Write は s を引き出し drawerDir の sessions/ にアトミックに書く。sessions/ が無ければ 0700 で作る。

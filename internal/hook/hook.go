@@ -9,7 +9,6 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -27,9 +26,6 @@ type input struct {
 	Source           string `json:"source"`
 	NotificationType string `json:"notification_type"`
 }
-
-// validSessionID はファイル名に使える session_id。パスの区切り・`.`・glob のメタ文字を含まない。
-var validSessionID = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
 // action は 1 つの hook 入力がセッション状態に及ぼす作用。
 type action int
@@ -83,7 +79,7 @@ func parse(stdin io.Reader) (input, error) {
 			return input{}, fmt.Errorf("input has no %s", f.name)
 		}
 	}
-	if !validSessionID.MatchString(in.SessionID) {
+	if !session.ValidID(in.SessionID) {
 		return input{}, fmt.Errorf("invalid session_id %q", in.SessionID)
 	}
 	return in, nil

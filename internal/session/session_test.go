@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -151,4 +152,72 @@ func sessionsDirWith(t *testing.T, name, content string) string {
 	drawerDir := t.TempDir()
 	testutil.WriteFile(t, filepath.Join(drawerDir, "sessions", name), content)
 	return drawerDir
+}
+
+func TestValidID(t *testing.T) {
+	for id, want := range map[string]bool{
+		"abc-123_X":                            true,
+		"5389af3d-fcc5-4afd-b891-db216efd112e": true,
+		"":                                     false,
+		"..":                                   false,
+		"../x":                                 false,
+		"a/b":                                  false,
+		"a.b":                                  false,
+		"*":                                    false,
+		"a\nb":                                 false,
+	} {
+		if got := ValidID(id); got != want {
+			t.Errorf("ValidID(%q) = %v, want %v", id, got, want)
+		}
+	}
+}
+
+func TestListReadsOnlySessionFiles(t *testing.T) {
+	drawerDir := t.TempDir()
+	a, b := sample(), sample()
+	a.SessionID, b.SessionID = "a", "b"
+	for _, s := range []Session{b, a} {
+		if err := Write(drawerDir, s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	dir := filepath.Join(drawerDir, "sessions")
+	for name, content := range map[string]string{
+		"a.next.json":       `{"summary":"x"}`,
+		"a.extract.lock":    "",
+		".a.json.123.tmp":   "{}",
+		"broken.json":       `{"session_id":`,
+		"mismatch.json":     `{"session_id":"other"}`,
+		"not-a-session.txt": "{}",
+	} {
+		testutil.WriteFile(t, filepath.Join(dir, name), content)
+	}
+
+	got, err := List(drawerDir)
+
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if want := []Session{a, b}; !slices.Equal(got, want) {
+		t.Errorf("List = %+v, want %+v", got, want)
+	}
+}
+
+func TestListWithoutSessionsDirectoryIsEmpty(t *testing.T) {
+	got, err := List(t.TempDir())
+
+	if err != nil || len(got) != 0 {
+		t.Errorf("List = %+v, err %v, want empty", got, err)
+	}
+}
+
+func TestListFailsWhenSessionFileCannotBeRead(t *testing.T) {
+	drawerDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(drawerDir, "sessions", "abc.json"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := List(drawerDir); err == nil {
+		t.Error("List succeeded, want an error")
+	}
 }

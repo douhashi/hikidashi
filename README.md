@@ -10,6 +10,7 @@ hikidashi 本体（`hikidashi` コマンド）と、Claude Code の hooks を `h
 
 - git 2.31 以上
 - tmux（tmux の pane で動くセッションだけを記録する）
+- fzf（`hikidashi open` が一覧に使う）
 - Go
 - Claude Code
 
@@ -32,6 +33,18 @@ plugin は起動時に読み込まれるため、動いている Claude Code の
 > gh auth setup-git
 > export GOPRIVATE=github.com/douhashi/hikidashi
 > ```
+
+## tmux から開く
+
+`hikidashi open` は、全引き出しのセッションを fzf に並べ、選んだセッションの pane へ移動する。
+tmux の中で動かす必要があるため、`tmux.conf` にポップアップで開くキーバインドを書く。
+
+```tmux
+# prefix + h で一覧を開く。-E で、移動した後や Esc で閉じた後にポップアップも閉じる。
+bind-key h display-popup -E -w 80% -h 60% hikidashi open
+```
+
+`hikidashi` と `fzf` は tmux サーバーの `PATH` から見える場所に置く。
 
 ## 無効化・削除
 

@@ -65,6 +65,7 @@ flowchart LR
 - plugin はリポジトリ直下の marketplace（`.claude-plugin/marketplace.json`）から `hikidashi@hikidashi` として配る
 - plugin にはバイナリを同梱しない。プラットフォームごとのバイナリを plugin に積むと配布が重くなるため、`PATH` 上の `hikidashi` を呼ぶ
 - 外部コマンドへの依存は `git`・`tmux`・`fzf`・`claude` に限る
+- 対象 OS は Linux とする。読み手の生存確認が `/proc` に頼るため、他の OS では `open`・`status` がエラーで終わる
 
 ## 状態モデル
 
@@ -166,7 +167,7 @@ stateDiagram-v2
 | `summary` | いま何をしているか（1〜2 文） |
 | `human_next` | 人間の次アクション。無ければ空 |
 | `claude_next` | Claude の次アクション。無ければ空 |
-| `blockers` | ブロッカーの配列 |
+| `blockers` | ブロッカーの配列（要素は文字列） |
 | `generated_at` | 抽出した時刻 |
 
 ## 引き出しの解決と登録
@@ -215,15 +216,18 @@ hook は入力の `cwd` から引き出しを決める。
 
 - `SessionEnd` で `<session_id>.*` を消す。`--resume` で戻れば `SessionStart` で作り直される
 - `SessionEnd` は `/exit` や pane の kill（SIGHUP）では発火するが、SIGKILL やクラッシュでは発火しない
-- 取り残されたファイルは、読み手（`open` / `status`）が `claude_pid` のプロセスが生きていて名前が `claude` であることを確かめ、そうでなければ消す
+- 取り残されたファイルは、読み手（`open` / `status`）が `claude_pid` のプロセスが生きていて名前（`/proc/<pid>/comm`）が `claude` であることを確かめ、そうでなければ消す
 - pane の存在では生死を判定しない。claude が死んでも pane はシェルに戻って残るため
 - 読み手が消すのは原則 2 の例外だが、消すのは書き手が二度と書かないファイルに限るため競合しない
 
 ## UI
 
-- `hikidashi open` は fzf の一覧を出す。並びは引き出し → セッションで、状態・放置時間・次アクションを 1 行に並べる
-- 並び順は `waiting` → `idle` → `running`。人間が捌くべきものを上に出す
-- fzf のプレビューに次アクションの全文と備忘録を出す
+- `hikidashi open` は fzf の一覧を出す。1 セッション 1 行で、引き出し名 → 状態 → 放置時間 → 次アクションの列順に並べる。「引き出し → セッション」はこの列順のことで、一覧を引き出しごとにはまとめない
+- 並び順は `waiting` → `idle` → `running`。人間が捌くべきものを上に出す。同順位は放置の長い順、次に引き出し名の順とする
+- 状態と放置時間は中断を反映した実効の値で出す。放置時間はその状態に入ってからの経過で、`5m` / `3h` / `2d` の形に切り捨てる
+- 次アクションの列は `human_next`、空なら `summary` を出す。未抽出なら `-` を出し、一覧からは外さない
+- fzf のプレビューに次アクションの全文と備忘録を出す。各行の先頭に fzf には見せない隠しキー `<slug>/<session_id>` を持たせ、プレビューは `hikidashi open --preview {1}` でそれを受け取る
+- 隠しキーからパスは組み立てない。slug は登録済みの引き出しのディレクトリ名と照合し、`session_id` はファイル名に使える形に限る。データルートの外を読ませないため
 - Enter で `tmux switch-client -t <pane>` し、該当 pane に移動する
 - `hikidashi status` は `waiting` の件数だけを出す。0 件なら何も出さない
 - tmux への組み込み（キーバインドと `status-right`）はユーザーが `tmux.conf` に書く。hikidashi は `tmux.conf` を書き換えない
