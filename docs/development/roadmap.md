@@ -4,12 +4,15 @@
 
 ## 予定（上から着手順）
 
-- [ ] Go のプロジェクト雛形を作り、テストと lint を `mise run check` に載せる。
-- [ ] 引き出しを登録し状態を記録する `hikidashi hook` と、それを繋ぐ plugin を作る。
-- [ ] `SessionStart` で案件の備忘録をコンテキストに注入する。
-- [ ] 次アクションを抽出する `hikidashi extract` と要約プロンプトを作る。
-- [ ] 一覧から pane へ移動する `hikidashi open` と `hikidashi status` を作る。
-- [ ] 備忘録を開く `hikidashi notes` を作る。
+- [ ] Go の雛形と test・lint のタスクを整える。 → #3
+- [ ] 未検証の前提を実環境で確かめて反映する。 → #4
+- [ ] 引き出しの解決と登録を実装する。 [dep #3] → #5
+- [ ] hook イベントからセッション状態を記録する。 [dep #4] [dep #5] → #6
+- [ ] hooks を hikidashi に繋ぐ plugin を追加する。 [dep #6] → #7
+- [ ] 備忘録の注入と hikidashi notes を追加する。 [dep #6] → #8
+- [ ] Stop 時に次アクションを抽出する。 [dep #6] [dep #7] → #9
+- [ ] 引き出しの一覧から pane へ移動する。 [dep #6] → #10
+- [ ] ステータスバーに入力待ちの件数を出す。 [dep #10] → #11
 
 ## 完了
 
