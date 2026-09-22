@@ -4,10 +4,12 @@
 
 ## 予定（上から着手順）
 
-- [ ] 状態を記録し次アクション抽出を起動する hook スクリプトを作る。
+- [ ] Go のプロジェクト雛形を作り、テストと lint を `mise run check` に載せる。
+- [ ] 引き出しを登録し状態を記録する `hikidashi hook` と、それを繋ぐ plugin を作る。
 - [ ] `SessionStart` で案件の備忘録をコンテキストに注入する。
-- [ ] 次アクション抽出用の要約プロンプトを作る。
-- [ ] 引き出しとセッションを一覧し pane へ移動する fzf popup を作る。
+- [ ] 次アクションを抽出する `hikidashi extract` と要約プロンプトを作る。
+- [ ] 一覧から pane へ移動する `hikidashi open` と `hikidashi status` を作る。
+- [ ] 備忘録を開く `hikidashi notes` を作る。
 
 ## 完了
 
