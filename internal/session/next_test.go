@@ -50,3 +50,48 @@ func TestReadNextNotExtractedIsNotOK(t *testing.T) {
 		})
 	}
 }
+
+func TestWriteNextThenReadNextRoundTrips(t *testing.T) {
+	drawerDir := t.TempDir()
+	want := Next{
+		Summary:     "API のテストを直している",
+		ClaudeNext:  "失敗しているテストを直す",
+		Blockers:    []string{},
+		GeneratedAt: time.Date(2026, 9, 23, 10, 0, 0, 0, time.UTC),
+	}
+
+	if err := WriteNext(drawerDir, "abc", want); err != nil {
+		t.Fatalf("WriteNext: %v", err)
+	}
+	got, ok, err := ReadNext(drawerDir, "abc")
+
+	if err != nil || !ok {
+		t.Fatalf("ReadNext = ok %v, err %v, want the written next action", ok, err)
+	}
+	if got.Summary != want.Summary || got.ClaudeNext != want.ClaudeNext || got.HumanNext != "" ||
+		!slices.Equal(got.Blockers, want.Blockers) || !got.GeneratedAt.Equal(want.GeneratedAt) {
+		t.Errorf("ReadNext = %+v, want %+v", got, want)
+	}
+	testutil.AssertPerm(t, filepath.Join(drawerDir, "sessions"), 0o700)
+	testutil.AssertPerm(t, filepath.Join(drawerDir, "sessions", "abc.next.json"), 0o600)
+}
+
+func TestOpenExtractLockCreatesPrivateFile(t *testing.T) {
+	drawerDir := t.TempDir()
+
+	f, err := OpenExtractLock(drawerDir, "abc")
+	if err != nil {
+		t.Fatalf("OpenExtractLock: %v", err)
+	}
+	t.Cleanup(func() { _ = f.Close() })
+
+	path := filepath.Join(drawerDir, "sessions", "abc.extract.lock")
+	if f.Name() != path {
+		t.Errorf("lock = %s, want %s", f.Name(), path)
+	}
+	if _, err := f.WriteString("1"); err != nil {
+		t.Errorf("lock is not writable: %v", err)
+	}
+	testutil.AssertPerm(t, filepath.Join(drawerDir, "sessions"), 0o700)
+	testutil.AssertPerm(t, path, 0o600)
+}

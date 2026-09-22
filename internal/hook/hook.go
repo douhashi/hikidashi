@@ -17,8 +17,8 @@ import (
 	"github.com/douhashi/hikidashi/internal/session"
 )
 
-// input は hook 入力のうち hikidashi が使うフィールド。
-type input struct {
+// Input は hook 入力のうち hikidashi が使うフィールド。
+type Input struct {
 	SessionID        string `json:"session_id"`
 	TranscriptPath   string `json:"transcript_path"`
 	Cwd              string `json:"cwd"`
@@ -52,7 +52,7 @@ func Run(dataRoot string, stdin io.Reader, stdout io.Writer, getenv func(string)
 	if getenv("HIKIDASHI_DISABLE") == "1" {
 		return nil
 	}
-	in, err := parse(stdin)
+	in, err := Parse(stdin)
 	if err != nil {
 		return err
 	}
@@ -63,12 +63,12 @@ func Run(dataRoot string, stdin io.Reader, stdout io.Writer, getenv func(string)
 	return nil
 }
 
-// parse は hook 入力を読み、必須のフィールドと session_id の形を確かめる。
+// Parse は hook 入力を読み、必須のフィールドと session_id の形を確かめる。hikidashi extract も同じ入力を受けて使う。
 // エラーの文面には不正な値を引用符付きで入れ、改行等がログの行を崩さないようにする。
-func parse(stdin io.Reader) (input, error) {
-	var in input
+func Parse(stdin io.Reader) (Input, error) {
+	var in Input
 	if err := json.NewDecoder(stdin).Decode(&in); err != nil {
-		return input{}, fmt.Errorf("decode input: %w", err)
+		return Input{}, fmt.Errorf("decode input: %w", err)
 	}
 	for _, f := range []struct{ name, value string }{
 		{"hook_event_name", in.HookEventName},
@@ -76,22 +76,22 @@ func parse(stdin io.Reader) (input, error) {
 		{"transcript_path", in.TranscriptPath},
 	} {
 		if f.value == "" {
-			return input{}, fmt.Errorf("input has no %s", f.name)
+			return Input{}, fmt.Errorf("input has no %s", f.name)
 		}
 	}
 	if !session.ValidID(in.SessionID) {
-		return input{}, fmt.Errorf("invalid session_id %q", in.SessionID)
+		return Input{}, fmt.Errorf("invalid session_id %q", in.SessionID)
 	}
 	return in, nil
 }
 
 // rule は 1 つのイベントの入力から作用と目標の状態を決める。
-type rule func(in input) (action, session.State)
+type rule func(in Input) (action, session.State)
 
 // events は hikidashi hook が扱うイベントとその規則。plugin/hooks/hooks.json が繋ぐイベントの SSoT。
 // plugin の matcher には頼らず、ここで入力を絞り込む。
 var events = map[string]rule{
-	"SessionStart": func(in input) (action, session.State) {
+	"SessionStart": func(in Input) (action, session.State) {
 		// compact は同じセッションの続きであり、状態を変えない。圧縮で失われる備忘録だけを入れ直す。
 		if in.Source == "compact" {
 			return inject, ""
@@ -100,7 +100,7 @@ var events = map[string]rule{
 	},
 	"UserPromptSubmit":  always(enter, session.Running),
 	"PermissionRequest": always(enter, session.Waiting),
-	"Notification": func(in input) (action, session.State) {
+	"Notification": func(in Input) (action, session.State) {
 		switch in.NotificationType {
 		case "elicitation_dialog", "elicitation_url_dialog":
 			return enter, session.Waiting
@@ -115,11 +115,11 @@ var events = map[string]rule{
 
 // always は入力によらず act と state を返す規則。
 func always(act action, state session.State) rule {
-	return func(input) (action, session.State) { return act, state }
+	return func(Input) (action, session.State) { return act, state }
 }
 
 // classify は入力から作用と目標の状態を決める。未知のイベントは何もしない。
-func classify(in input) (action, session.State) {
+func classify(in Input) (action, session.State) {
 	r, ok := events[in.HookEventName]
 	if !ok {
 		return ignore, ""
@@ -129,7 +129,7 @@ func classify(in input) (action, session.State) {
 
 // apply は入力の作用を引き出し・stdout・セッション状態に反映する。何もしない入力では git も起動しない。
 // 備忘録の注入と状態の記録は、片方が失敗してももう片方を行う。
-func apply(dataRoot string, in input, stdout io.Writer, getenv func(string) string, now time.Time) error {
+func apply(dataRoot string, in Input, stdout io.Writer, getenv func(string) string, now time.Time) error {
 	act, state := classify(in)
 	if act == ignore {
 		return nil
@@ -186,7 +186,7 @@ func injectNotes(stdout io.Writer, d drawer.Drawer) error {
 }
 
 // record は act をセッション状態に反映する。
-func record(d drawer.Drawer, act action, state session.State, in input, getenv func(string) string, now time.Time) error {
+func record(d drawer.Drawer, act action, state session.State, in Input, getenv func(string) string, now time.Time) error {
 	// tmux 外のセッションは一覧から選んでも移動先が無いため、状態を記録しない。
 	pane := getenv("TMUX_PANE")
 	if pane == "" {

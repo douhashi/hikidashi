@@ -52,6 +52,7 @@ Go のコードは次の 2 つで検査する。どちらも `mise run check` �
 
 `mise run test` は `plugin/hooks/hooks.json` の網羅も検査する。`hikidashi hook` に繋ぐイベントが
 `internal/hook/hook.go` の `events`（扱うイベントの SSoT）とちょうど一致し、matcher も async も持たないこと。
+`hikidashi extract` は `Stop` にだけ async で繋ぎ、それ以外のコマンドは繋がないこと。
 
 ## plugin を試す
 

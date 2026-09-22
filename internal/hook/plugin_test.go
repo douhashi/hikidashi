@@ -11,9 +11,6 @@ import (
 // hooksJSON は Claude Code plugin が各イベントを hikidashi に繋ぐ定義。
 const hooksJSON = "../../plugin/hooks/hooks.json"
 
-// hookCommand は hooks.json から hikidashi hook を起動するコマンド。
-const hookCommand = "hikidashi hook"
-
 // hooksFile は hooks.json のうち、この検査が見るフィールド。
 type hooksFile struct {
 	Hooks map[string][]struct {
@@ -26,11 +23,26 @@ type hooksFile struct {
 	} `json:"hooks"`
 }
 
-// TestPluginRoutesEveryHandledEventToHook は、hooks.json が hikidashi hook に繋ぐイベントが
-// classify の扱うイベントとちょうど一致し、各イベントで同期に 1 度だけ、絞り込みなしで起動することを確かめる。
-// 絞り込みは classify が行うため、matcher で入力を落とすと状態の遷移や compact 後の備忘録の注入を取りこぼす。
-// async にすると SessionStart の stdout が Claude に届かず、備忘録を注入できない。
-func TestPluginRoutesEveryHandledEventToHook(t *testing.T) {
+// route は hooks.json が 1 つのコマンドを繋ぐべきイベントと、起動の仕方。
+type route struct {
+	events []string
+	async  bool
+}
+
+// routes は hooks.json が繋ぐコマンドのすべて。
+//   - hikidashi hook は classify の扱うイベント（events）に同期で繋ぐ。async にすると SessionStart の stdout が
+//     Claude に届かず、備忘録を注入できない。
+//   - hikidashi extract は Stop にだけ async で繋ぐ。抽出は数秒かかり、Claude Code を待たせない
+//     （docs/development/architecture.md の「次アクションの抽出」）。
+var routes = map[string]route{
+	"hikidashi hook":    {events: slices.Sorted(maps.Keys(events))},
+	"hikidashi extract": {events: []string{"Stop"}, async: true},
+}
+
+// TestPluginRoutesEventsToCommands は、hooks.json が routes のコマンドだけを、それぞれ決めたイベントにちょうど、
+// 各イベントで 1 度だけ、決めた起動の仕方で、絞り込みなしで繋ぐことを確かめる。
+// 絞り込みは hikidashi が行うため、matcher で入力を落とすと状態の遷移や compact 後の備忘録の注入を取りこぼす。
+func TestPluginRoutesEventsToCommands(t *testing.T) {
 	data, err := os.ReadFile(hooksJSON)
 	if err != nil {
 		t.Fatal(err)
@@ -40,30 +52,37 @@ func TestPluginRoutesEveryHandledEventToHook(t *testing.T) {
 		t.Fatalf("decode %s: %v", hooksJSON, err)
 	}
 
-	routed := map[string]int{}
+	routed := map[string]map[string]int{}
 	for event, groups := range file.Hooks {
 		for _, g := range groups {
 			for _, h := range g.Hooks {
-				if h.Type != "command" || h.Command != hookCommand {
+				r, ok := routes[h.Command]
+				if h.Type != "command" || !ok {
+					t.Errorf("%s: unexpected hook %s %q", event, h.Type, h.Command)
 					continue
 				}
-				routed[event]++
-				if g.Matcher != nil {
-					t.Errorf("%s: %q has matcher %q, want none", event, hookCommand, *g.Matcher)
+				if routed[h.Command] == nil {
+					routed[h.Command] = map[string]int{}
 				}
-				if h.Async {
-					t.Errorf("%s: %q is async, want synchronous", event, hookCommand)
+				routed[h.Command][event]++
+				if g.Matcher != nil {
+					t.Errorf("%s: %q has matcher %q, want none", event, h.Command, *g.Matcher)
+				}
+				if h.Async != r.async {
+					t.Errorf("%s: %q has async %v, want %v", event, h.Command, h.Async, r.async)
 				}
 			}
 		}
 	}
 
-	if got, want := slices.Sorted(maps.Keys(routed)), slices.Sorted(maps.Keys(events)); !slices.Equal(got, want) {
-		t.Errorf("events routed to %q = %v, want %v", hookCommand, got, want)
-	}
-	for event, n := range routed {
-		if n != 1 {
-			t.Errorf("%s: %q runs %d times, want once", event, hookCommand, n)
+	for command, r := range routes {
+		if got := slices.Sorted(maps.Keys(routed[command])); !slices.Equal(got, r.events) {
+			t.Errorf("events routed to %q = %v, want %v", command, got, r.events)
+		}
+		for event, n := range routed[command] {
+			if n != 1 {
+				t.Errorf("%s: %q runs %d times, want once", event, command, n)
+			}
 		}
 	}
 }

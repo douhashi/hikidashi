@@ -2,6 +2,7 @@ package session
 
 import (
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -106,5 +107,58 @@ func TestInterruptedMissingTranscriptIsNotInterrupted(t *testing.T) {
 func TestInterruptedFailsWhenTranscriptCannotBeRead(t *testing.T) {
 	if _, _, err := Interrupted(t.TempDir(), changedAt); err == nil {
 		t.Error("Interrupted succeeded, want an error")
+	}
+}
+
+// message は ScanMessages が渡す 1 件。
+type message struct{ role, text string }
+
+func scan(t *testing.T, path string) []message {
+	t.Helper()
+	var got []message
+	if err := ScanMessages(path, func(role, text string) { got = append(got, message{role, text}) }); err != nil {
+		t.Fatalf("ScanMessages: %v", err)
+	}
+	return got
+}
+
+func TestScanMessagesPassesOnlyConversationText(t *testing.T) {
+	// 形は実際の transcript（v2.1.280）から写した。
+	meta := `{"type":"user","isMeta":true,"isSidechain":false,"message":{"role":"user","content":"<local-command-caveat>Caveat</local-command-caveat>"}}`
+	thinking := `{"type":"assistant","isSidechain":false,"message":{"role":"assistant","content":[{"type":"thinking","thinking":"考える"},{"type":"text","text":"直します"},{"type":"tool_use","id":"t2","name":"Edit","input":{}},{"type":"text","text":"続けます"}]}}`
+	sidechainAnswer := `{"type":"assistant","isSidechain":true,"message":{"role":"assistant","content":[{"type":"text","text":"サブエージェントの報告"}]}}`
+	system := `{"type":"system","content":"hook ran"}`
+	path := writeTranscript(t, meta, prompt, toolUse, toolResult, thinking, sidechainPrompt, sidechainAnswer, system,
+		"not json", interrupted, answer, `{"type":"assistant","mess`)
+
+	got := scan(t, path)
+
+	want := []message{
+		{"user", "テストを直して"},
+		{"assistant", "直します\n\n続けます"},
+		{"user", "[Request interrupted by user]"},
+		{"assistant", "中断しました"},
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("messages = %q, want %q", got, want)
+	}
+}
+
+func TestScanMessagesReadsLinesLongerThanAnyBuffer(t *testing.T) {
+	long := strings.Repeat("あ", 1<<20)
+	line := `{"type":"assistant","isSidechain":false,"message":{"role":"assistant","content":[{"type":"text","text":"` + long + `"}]}}`
+
+	got := scan(t, writeTranscript(t, line, prompt))
+
+	if len(got) != 2 || got[0].text != long || got[1].text != "テストを直して" {
+		t.Errorf("got %d messages, want the long answer and the prompt", len(got))
+	}
+}
+
+func TestScanMessagesFailsWhenTranscriptIsMissing(t *testing.T) {
+	err := ScanMessages(filepath.Join(t.TempDir(), "missing.jsonl"), func(string, string) {})
+
+	if err == nil {
+		t.Error("ScanMessages succeeded, want an error")
 	}
 }

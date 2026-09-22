@@ -37,8 +37,8 @@ func assertSilentSuccess(t *testing.T, code int, stdout string) {
 	}
 }
 
-// assertLog はログの各行が `<RFC3339> hook: <message>` で、message が wants に順に一致することを確かめる。
-func assertLog(t *testing.T, dataRoot string, wants ...*regexp.Regexp) {
+// assertLog はログの各行が `<RFC3339> <name>: <message>` で、message が wants に順に一致することを確かめる。
+func assertLog(t *testing.T, dataRoot, name string, wants ...*regexp.Regexp) {
 	t.Helper()
 	file := filepath.Join(dataRoot, "hikidashi.log")
 	lines := strings.SplitAfter(testutil.ReadFile(t, file), "\n")
@@ -49,7 +49,7 @@ func assertLog(t *testing.T, dataRoot string, wants ...*regexp.Regexp) {
 	if len(lines) != len(wants) {
 		t.Fatalf("log = %q, want %d lines", lines, len(wants))
 	}
-	prefix := `^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(Z|[+-]\d{2}:\d{2}) hook: `
+	prefix := `^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(Z|[+-]\d{2}:\d{2}) ` + name + `: `
 	for i, want := range wants {
 		if !regexp.MustCompile(prefix + want.String() + "\n$").MatchString(lines[i]) {
 			t.Errorf("log line %d = %q, want %s", i, lines[i], want)
@@ -107,7 +107,7 @@ func TestHookLogsInvalidInputAndExitsZero(t *testing.T) {
 		assertSilentSuccess(t, code, stdout)
 	}
 
-	assertLog(t, dataRoot,
+	assertLog(t, dataRoot, "hook",
 		regexp.MustCompile(`decode input: .+`),
 		regexp.MustCompile(regexp.QuoteMeta(`invalid session_id "../x"`)),
 	)
@@ -120,7 +120,7 @@ func TestHookLogsEventAndSessionOfFailure(t *testing.T) {
 	code, stdout, _ := invoke(commands, hookInput("Stop", t.TempDir()), "hook")
 
 	assertSilentSuccess(t, code, stdout)
-	assertLog(t, dataRoot, regexp.MustCompile(`Stop s1: run git: .+`))
+	assertLog(t, dataRoot, "hook", regexp.MustCompile(`Stop s1: run git: .+`))
 }
 
 func TestHookRecoversPanic(t *testing.T) {
@@ -130,7 +130,7 @@ func TestHookRecoversPanic(t *testing.T) {
 	code := run(commands, []string{"hook"}, panicReader{}, &out, &errOut)
 
 	assertSilentSuccess(t, code, out.String())
-	assertLog(t, dataRoot, regexp.MustCompile(`panic: stdin exploded`))
+	assertLog(t, dataRoot, "hook", regexp.MustCompile(`panic: stdin exploded`))
 }
 
 // panicReader は読まれると panic する stdin。hook の内側で起きた panic を模す。
