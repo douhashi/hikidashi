@@ -224,3 +224,54 @@ func TestNotesPathIsInDrawerDir(t *testing.T) {
 		t.Errorf("NotesPath = %q, want %q", got, want)
 	}
 }
+
+func TestListReturnsRegisteredDrawers(t *testing.T) {
+	dataRoot := t.TempDir()
+	drawers := filepath.Join(dataRoot, "drawers")
+	api := Drawer{Dir: filepath.Join(drawers, "api-3f2a9c1b"), Path: "/src/api", Name: "api"}
+	web := Drawer{Dir: filepath.Join(drawers, "web-0a1b2c3d"), Path: "/src/web", Name: "web"}
+	for _, d := range []Drawer{web, api} {
+		if err := d.Register(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 登録の途中（drawer.json がまだ無い）・壊れた drawer.json・ディレクトリでないものは引き出しではない。
+	if err := os.MkdirAll(filepath.Join(drawers, "half-00000000"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	testutil.WriteFile(t, filepath.Join(drawers, "broken-11111111", "drawer.json"), `{"path":`)
+	testutil.WriteFile(t, filepath.Join(drawers, "stray.txt"), "")
+
+	got, err := List(dataRoot)
+
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("List = %+v, want api and web", got)
+	}
+	for i, want := range []Drawer{api, web} {
+		if got[i].Dir != want.Dir || got[i].Path != want.Path || got[i].Name != want.Name || got[i].CreatedAt.IsZero() {
+			t.Errorf("List[%d] = %+v, want %+v with created_at", i, got[i], want)
+		}
+	}
+}
+
+func TestListWithoutDrawersIsEmpty(t *testing.T) {
+	got, err := List(t.TempDir())
+
+	if err != nil || len(got) != 0 {
+		t.Errorf("List = %+v, err %v, want empty", got, err)
+	}
+}
+
+func TestListFailsWhenDrawerJSONCannotBeRead(t *testing.T) {
+	dataRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dataRoot, "drawers", "api-3f2a9c1b", "drawer.json"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := List(dataRoot); err == nil {
+		t.Error("List succeeded, want an error")
+	}
+}

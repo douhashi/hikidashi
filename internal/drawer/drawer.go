@@ -1,4 +1,4 @@
-// Package drawer は作業ディレクトリから引き出しを解決し、登録する。
+// Package drawer は作業ディレクトリから引き出しを解決・登録し、登録済みの引き出しを列挙する。
 // 規則は docs/development/architecture.md の「引き出しの解決と登録」を参照。
 package drawer
 
@@ -48,7 +48,7 @@ func Resolve(dataRoot, cwd string) (Drawer, bool, error) {
 	name := filepath.Base(root)
 	sum := sha256.Sum256([]byte(root))
 	return Drawer{
-		Dir:  filepath.Join(dataRoot, "drawers", name+"-"+hex.EncodeToString(sum[:])[:8]),
+		Dir:  filepath.Join(drawersDir(dataRoot), name+"-"+hex.EncodeToString(sum[:])[:8]),
 		Path: root,
 		Name: name,
 	}, true, nil
@@ -89,7 +89,7 @@ func (d Drawer) Register() error {
 	if err := os.MkdirAll(d.Dir, 0o700); err != nil {
 		return err
 	}
-	file := filepath.Join(d.Dir, "drawer.json")
+	file := metaFile(d.Dir)
 	_, err := os.Stat(file)
 	if err == nil {
 		return nil
@@ -105,4 +105,43 @@ func (d Drawer) Register() error {
 // NotesPath は引き出しの備忘録（notes.md）のパスを返す。ファイルがあるとは限らない。
 func (d Drawer) NotesPath() string {
 	return filepath.Join(d.Dir, "notes.md")
+}
+
+// List は dataRoot 配下に登録済みの引き出しを、ディレクトリ名の順にすべて返す。
+// drawer.json が無い（登録の途中）・壊れているディレクトリは引き出しとして扱わない。
+func List(dataRoot string) ([]Drawer, error) {
+	entries, err := os.ReadDir(drawersDir(dataRoot))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	var drawers []Drawer
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		dir := filepath.Join(drawersDir(dataRoot), e.Name())
+		d, ok, err := jsonfile.Read[Drawer](metaFile(dir))
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			d.Dir = dir
+			drawers = append(drawers, d)
+		}
+	}
+	return drawers, nil
+}
+
+// drawersDir は dataRoot 配下の、引き出しのディレクトリを並べる場所を返す。
+func drawersDir(dataRoot string) string {
+	return filepath.Join(dataRoot, "drawers")
+}
+
+// metaFile は引き出しのディレクトリ dir にある、引き出しのメタ情報のファイルのパスを返す。
+func metaFile(dir string) string {
+	return filepath.Join(dir, "drawer.json")
 }

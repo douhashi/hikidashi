@@ -102,3 +102,43 @@ func AssertPerm(t *testing.T, path string, want os.FileMode) {
 		t.Errorf("mode of %s = %o, want %o", path, got, want)
 	}
 }
+
+// StartClaude は sleep の実行ファイルを claude という名前で複製して起動し、その PID を返す。
+// /proc/<pid>/comm が claude になるため、Claude Code 本体の生存確認の対象になる。プロセスはテストの終わりに止める。
+func StartClaude(t *testing.T) int {
+	t.Helper()
+	sleep, err := exec.LookPath("sleep")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(sleep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claude := filepath.Join(t.TempDir(), "claude")
+	if err := os.WriteFile(claude, data, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(claude, "3600")
+	// comm は実行ファイルの名前から決まる。argv[0] は sleep のままにし、argv[0] で動作を選ぶ
+	// マルチコール版の coreutils（uutils・busybox）でも sleep として動かす。
+	cmd.Args[0] = "sleep"
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	})
+	return cmd.Process.Pid
+}
+
+// DeadPID は終了して回収済みのプロセスの PID を返す。SIGKILL 等で消えた claude を模す。
+func DeadPID(t *testing.T) int {
+	t.Helper()
+	cmd := exec.Command("true")
+	if err := cmd.Run(); err != nil {
+		t.Fatal(err)
+	}
+	return cmd.Process.Pid
+}

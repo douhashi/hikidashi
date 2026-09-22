@@ -97,3 +97,44 @@ func assertContent(t *testing.T, path, want string) {
 		t.Errorf("content = %q, want %q", got, want)
 	}
 }
+
+func TestReadDecodesFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "a.json")
+	testutil.WriteFile(t, path, `{"name":"x","count":2}`)
+
+	got, ok, err := Read[sample](path)
+
+	if err != nil || !ok {
+		t.Fatalf("Read = ok %v, err %v, want the decoded value", ok, err)
+	}
+	if want := (sample{Name: "x", Count: 2}); got != want {
+		t.Errorf("Read = %+v, want %+v", got, want)
+	}
+}
+
+func TestReadTreatsMissingOrBrokenFileAsAbsent(t *testing.T) {
+	dir := t.TempDir()
+	broken := filepath.Join(dir, "broken.json")
+	testutil.WriteFile(t, broken, `{"name":"x",`)
+
+	for name, path := range map[string]string{
+		"missing file":      filepath.Join(dir, "missing.json"),
+		"missing directory": filepath.Join(dir, "no", "a.json"),
+		"broken file":       broken,
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, ok, err := Read[sample](path)
+
+			if ok || err != nil || got != (sample{}) {
+				t.Errorf("Read = %+v, ok %v, err %v, want zero, false, nil", got, ok, err)
+			}
+		})
+	}
+}
+
+func TestReadFailsWhenFileCannotBeRead(t *testing.T) {
+	// ディレクトリを読ませ、無い・壊れているのどちらとも違う読み込みの失敗を起こす。
+	if _, _, err := Read[sample](t.TempDir()); err == nil {
+		t.Error("Read succeeded, want an error")
+	}
+}
