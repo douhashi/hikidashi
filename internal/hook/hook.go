@@ -89,33 +89,46 @@ func parse(stdin io.Reader) (input, error) {
 	return in, nil
 }
 
-// classify は入力から作用と目標の状態を決める。plugin の matcher には頼らず、ここで絞り込む。
-func classify(in input) (action, session.State) {
-	switch in.HookEventName {
-	case "SessionStart":
+// rule は 1 つのイベントの入力から作用と目標の状態を決める。
+type rule func(in input) (action, session.State)
+
+// events は hikidashi hook が扱うイベントとその規則。plugin/hooks/hooks.json が繋ぐイベントの SSoT。
+// plugin の matcher には頼らず、ここで入力を絞り込む。
+var events = map[string]rule{
+	"SessionStart": func(in input) (action, session.State) {
 		// compact は同じセッションの続きであり、状態を変えない。圧縮で失われる備忘録だけを入れ直す。
 		if in.Source == "compact" {
 			return inject, ""
 		}
 		return start, session.Idle
-	case "UserPromptSubmit":
-		return enter, session.Running
-	case "PermissionRequest":
-		return enter, session.Waiting
-	case "Notification":
+	},
+	"UserPromptSubmit":  always(enter, session.Running),
+	"PermissionRequest": always(enter, session.Waiting),
+	"Notification": func(in input) (action, session.State) {
 		switch in.NotificationType {
 		case "elicitation_dialog", "elicitation_url_dialog":
 			return enter, session.Waiting
 		}
 		return ignore, ""
-	case "PostToolUse":
-		return resume, session.Running
-	case "Stop", "StopFailure":
-		return enter, session.Idle
-	case "SessionEnd":
-		return end, ""
+	},
+	"PostToolUse": always(resume, session.Running),
+	"Stop":        always(enter, session.Idle),
+	"StopFailure": always(enter, session.Idle),
+	"SessionEnd":  always(end, ""),
+}
+
+// always は入力によらず act と state を返す規則。
+func always(act action, state session.State) rule {
+	return func(input) (action, session.State) { return act, state }
+}
+
+// classify は入力から作用と目標の状態を決める。未知のイベントは何もしない。
+func classify(in input) (action, session.State) {
+	r, ok := events[in.HookEventName]
+	if !ok {
+		return ignore, ""
 	}
-	return ignore, ""
+	return r(in)
 }
 
 // apply は入力の作用を引き出し・stdout・セッション状態に反映する。何もしない入力では git も起動しない。

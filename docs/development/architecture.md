@@ -59,9 +59,10 @@ flowchart LR
 | `hikidashi open` | tmux の `display-popup` から起動 | fzf で一覧を出し、選んだ pane へ移動する |
 | `hikidashi status` | tmux の `status-right` から起動 | 入力待ちの件数を出す |
 | `hikidashi notes` | 人間が起動 | 現在の引き出しの `notes.md` を `$EDITOR` で開く |
-| plugin | `hooks/hooks.json` | 各イベントを `hikidashi` に繋ぐだけ。ロジックは持たない |
+| plugin | `plugin/hooks/hooks.json` | 各イベントを `hikidashi` に繋ぐだけ。ロジックは持たない |
 
 - 言語は Go とする。hook はツール呼び出しのたびに起動するため起動の速さが効き、単一バイナリで依存なく配れる
+- plugin はリポジトリ直下の marketplace（`.claude-plugin/marketplace.json`）から `hikidashi@hikidashi` として配る
 - plugin にはバイナリを同梱しない。プラットフォームごとのバイナリを plugin に積むと配布が重くなるため、`PATH` 上の `hikidashi` を呼ぶ
 - 外部コマンドへの依存は `git`・`tmux`・`fzf`・`claude` に限る
 

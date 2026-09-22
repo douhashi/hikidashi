@@ -1,0 +1,14 @@
+{
+  "name": "hikidashi",
+  "description": "Claude Code plugin for hikidashi",
+  "owner": {
+    "name": "douhashi"
+  },
+  "plugins": [
+    {
+      "name": "hikidashi",
+      "source": "./plugin",
+      "description": "Record the state of each Claude Code session into hikidashi"
+    }
+  ]
+}

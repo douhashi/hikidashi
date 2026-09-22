@@ -1,0 +1,9 @@
+{
+  "name": "hikidashi",
+  "description": "Record the state of each Claude Code session into hikidashi",
+  "author": {
+    "name": "douhashi"
+  },
+  "repository": "https://github.com/douhashi/hikidashi",
+  "license": "MIT"
+}
