@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -17,6 +18,14 @@ func invoke(cmds []command, stdin string, args ...string) (code int, stdout, std
 	var out, errOut bytes.Buffer
 	code = run(cmds, args, strings.NewReader(stdin), &out, &errOut)
 	return code, out.String(), errOut.String()
+}
+
+// isolateHome は HOME を空の一時ディレクトリにし、そのデータルートを返す。
+func isolateHome(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	return filepath.Join(home, ".hikidashi")
 }
 
 func TestRunWithoutArgsPrintsUsageToStderr(t *testing.T) {

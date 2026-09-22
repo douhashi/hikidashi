@@ -46,6 +46,20 @@ bind-key h display-popup -E -w 80% -h 60% hikidashi open
 
 `hikidashi` と `fzf` は tmux サーバーの `PATH` から見える場所に置く。
 
+## ステータスバーに出す
+
+`hikidashi status` は、入力待ち（`waiting`）のセッションの件数を出す。0 件なら何も出さない。
+`tmux.conf` の `status-right` に組み込む。
+
+```tmux
+set -g status-right '#(hikidashi status) %H:%M'
+```
+
+表示は `status-interval`（既定 15 秒）ごとに更新される。`hikidashi` は tmux サーバーの `PATH` から見える場所に置く。
+
+件数の代わりに `!` が出たら、集計に失敗している。tmux は理由（stderr）を捨てるため、
+端末で `hikidashi status` を実行して理由を見る。
+
 ## 無効化・削除
 
 ```sh

@@ -24,8 +24,7 @@ type openEnv struct {
 
 func newOpenEnv(t *testing.T) openEnv {
 	t.Helper()
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	dataRoot := isolateHome(t)
 	t.Setenv("TMUX", "/tmp/tmux-1000/default,1234,0")
 	dir := t.TempDir()
 	t.Setenv("FAKE_DIR", dir)
@@ -39,7 +38,7 @@ printf '%s\n' "$FAKE_FZF_SELECT"`)
 	writeFake(t, dir, "tmux", `printf '%s\n' "$@" > "$FAKE_DIR/tmux.args"
 if [ "$FAKE_TMUX_EXIT" != 0 ]; then echo "can't find pane: %9" >&2; exit "$FAKE_TMUX_EXIT"; fi`)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	return openEnv{dir: dir, dataRoot: filepath.Join(home, ".hikidashi")}
+	return openEnv{dir: dir, dataRoot: dataRoot}
 }
 
 func writeFake(t *testing.T, dir, name, script string) {

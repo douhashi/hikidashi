@@ -229,7 +229,7 @@ hook は入力の `cwd` から引き出しを決める。
 - fzf のプレビューに次アクションの全文と備忘録を出す。各行の先頭に fzf には見せない隠しキー `<slug>/<session_id>` を持たせ、プレビューは `hikidashi open --preview {1}` でそれを受け取る
 - 隠しキーからパスは組み立てない。slug は登録済みの引き出しのディレクトリ名と照合し、`session_id` はファイル名に使える形に限る。データルートの外を読ませないため
 - Enter で `tmux switch-client -t <pane>` し、該当 pane に移動する
-- `hikidashi status` は `waiting` の件数だけを出す。0 件なら何も出さない
+- `hikidashi status` は `waiting` の件数だけを出す。0 件なら何も出さない。出力は件数と改行のみで、引数があれば exit 2、失敗は `!` を出して exit 1 とする
 - tmux への組み込み（キーバインドと `status-right`）はユーザーが `tmux.conf` に書く。hikidashi は `tmux.conf` を書き換えない
 - tmux のセッション名はリポジトリ名に揃える運用を推奨する。移動は pane ID で行うため必須ではない
 
