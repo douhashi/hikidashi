@@ -9,23 +9,25 @@ import (
 	"strings"
 )
 
-// command は 1 つのサブコマンド。run はサブコマンド名より後ろの引数を受け取り、終了コードを返す。
+// command は 1 つのサブコマンド。run はサブコマンド名より後ろの引数と標準入出力を受け取り、終了コードを返す。
 type command struct {
 	name    string
 	summary string
-	run     func(args []string, stdout, stderr io.Writer) int
+	run     func(args []string, stdin io.Reader, stdout, stderr io.Writer) int
 }
 
 // commands は hikidashi が持つサブコマンドの表。
-var commands []command
+var commands = []command{
+	{name: "hook", summary: "record the session state from a Claude Code hook input", run: runHook},
+}
 
 func main() {
-	os.Exit(run(commands, os.Args[1:], os.Stdout, os.Stderr))
+	os.Exit(run(commands, os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
 
 // run は args の先頭をサブコマンド名として cmds から引き、実行する。
 // 使い方の誤りは exit 2、help の要求は使い方を stdout に出して exit 0 とする。
-func run(cmds []command, args []string, stdout, stderr io.Writer) int {
+func run(cmds []command, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		report(stderr, usage(cmds))
 		return 2
@@ -43,7 +45,7 @@ func run(cmds []command, args []string, stdout, stderr io.Writer) int {
 
 	for _, c := range cmds {
 		if c.name == name {
-			return c.run(args[1:], stdout, stderr)
+			return c.run(args[1:], stdin, stdout, stderr)
 		}
 	}
 

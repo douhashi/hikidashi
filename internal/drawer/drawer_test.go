@@ -5,10 +5,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/douhashi/hikidashi/internal/testutil"
 )
 
 func TestDefaultRootIsUnderHome(t *testing.T) {
@@ -25,15 +26,15 @@ func TestDefaultRootIsUnderHome(t *testing.T) {
 }
 
 func TestResolveUnifiesWorktreeSubdirectoryAndSymlink(t *testing.T) {
-	isolateGit(t)
+	testutil.IsolateGit(t)
 	base := t.TempDir()
-	repo := newRepo(t, filepath.Join(base, "api"))
+	repo := testutil.NewRepo(t, filepath.Join(base, "api"))
 	sub := filepath.Join(repo, "a", "b")
 	if err := os.MkdirAll(sub, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	worktree := filepath.Join(base, "api-wt")
-	git(t, repo, "worktree", "add", "-q", worktree)
+	testutil.Git(t, repo, "worktree", "add", "-q", worktree)
 	link := filepath.Join(base, "link")
 	if err := os.Symlink(repo, link); err != nil {
 		t.Fatal(err)
@@ -53,10 +54,10 @@ func TestResolveUnifiesWorktreeSubdirectoryAndSymlink(t *testing.T) {
 }
 
 func TestResolveSeparatesSameNameAtDifferentPaths(t *testing.T) {
-	isolateGit(t)
+	testutil.IsolateGit(t)
 	base := t.TempDir()
-	first := newRepo(t, filepath.Join(base, "x", "app"))
-	second := newRepo(t, filepath.Join(base, "y", "app"))
+	first := testutil.NewRepo(t, filepath.Join(base, "x", "app"))
+	second := testutil.NewRepo(t, filepath.Join(base, "y", "app"))
 	dataRoot := t.TempDir()
 
 	a := mustResolve(t, dataRoot, first)
@@ -71,11 +72,11 @@ func TestResolveSeparatesSameNameAtDifferentPaths(t *testing.T) {
 }
 
 func TestResolveSubmoduleToItsOwnRoot(t *testing.T) {
-	isolateGit(t)
+	testutil.IsolateGit(t)
 	base := t.TempDir()
-	lib := newRepo(t, filepath.Join(base, "lib"))
-	super := newRepo(t, filepath.Join(base, "super"))
-	git(t, super, "-c", "protocol.file.allow=always", "submodule", "add", "-q", lib, "mods/lib")
+	lib := testutil.NewRepo(t, filepath.Join(base, "lib"))
+	super := testutil.NewRepo(t, filepath.Join(base, "super"))
+	testutil.Git(t, super, "-c", "protocol.file.allow=always", "submodule", "add", "-q", lib, "mods/lib")
 	submodule := filepath.Join(super, "mods", "lib")
 	dataRoot := t.TempDir()
 
@@ -87,15 +88,15 @@ func TestResolveSubmoduleToItsOwnRoot(t *testing.T) {
 }
 
 func TestResolveDoesNotTrackOutsideWorkTree(t *testing.T) {
-	isolateGit(t)
+	testutil.IsolateGit(t)
 	base := t.TempDir()
 	plain := filepath.Join(base, "plain")
 	if err := os.Mkdir(plain, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	repo := newRepo(t, filepath.Join(base, "repo"))
+	repo := testutil.NewRepo(t, filepath.Join(base, "repo"))
 	bare := filepath.Join(base, "bare.git")
-	git(t, base, "init", "-q", "--bare", bare)
+	testutil.Git(t, base, "init", "-q", "--bare", bare)
 
 	for name, cwd := range map[string]string{
 		"not a repository": plain,
@@ -111,14 +112,14 @@ func TestResolveDoesNotTrackOutsideWorkTree(t *testing.T) {
 			if ok || err != nil {
 				t.Errorf("Resolve(%q) = ok %v, err %v, want ok false, err nil", cwd, ok, err)
 			}
-			assertEmptyDir(t, dataRoot)
+			testutil.AssertEntries(t, dataRoot)
 		})
 	}
 }
 
 func TestResolveFailsWhenGitCannotStart(t *testing.T) {
-	isolateGit(t)
-	repo := newRepo(t, filepath.Join(t.TempDir(), "repo"))
+	testutil.IsolateGit(t)
+	repo := testutil.NewRepo(t, filepath.Join(t.TempDir(), "repo"))
 	t.Setenv("PATH", t.TempDir())
 
 	if _, _, err := Resolve(t.TempDir(), repo); err == nil {
@@ -150,9 +151,9 @@ func TestRegisterWritesDrawerJSONReadableOnlyByOwner(t *testing.T) {
 		t.Errorf("created_at = %v, want the time of registration", got.CreatedAt)
 	}
 	for _, dir := range []string{dataRoot, filepath.Dir(d.Dir), d.Dir} {
-		assertPerm(t, dir, 0o700)
+		testutil.AssertPerm(t, dir, 0o700)
 	}
-	assertPerm(t, filepath.Join(d.Dir, "drawer.json"), 0o600)
+	testutil.AssertPerm(t, filepath.Join(d.Dir, "drawer.json"), 0o600)
 }
 
 func TestRegisterKeepsExistingDrawerJSON(t *testing.T) {
@@ -191,40 +192,6 @@ func TestRegisterFailsWhenDirectoryCannotBeCreated(t *testing.T) {
 	}
 }
 
-// isolateGit はテスト中の git をユーザー・システムの設定から切り離し、コミットの作者を固定する。
-func isolateGit(t *testing.T) {
-	t.Helper()
-	for k, v := range map[string]string{
-		"GIT_CONFIG_GLOBAL":   "/dev/null",
-		"GIT_CONFIG_NOSYSTEM": "1",
-		"GIT_AUTHOR_NAME":     "hikidashi",
-		"GIT_AUTHOR_EMAIL":    "hikidashi@example.com",
-		"GIT_COMMITTER_NAME":  "hikidashi",
-		"GIT_COMMITTER_EMAIL": "hikidashi@example.com",
-	} {
-		t.Setenv(k, v)
-	}
-}
-
-// newRepo は dir にコミットを 1 つ持つリポジトリを作り、dir を返す。
-func newRepo(t *testing.T, dir string) string {
-	t.Helper()
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	git(t, dir, "init", "-q")
-	git(t, dir, "commit", "-q", "--allow-empty", "-m", "initial")
-	return dir
-}
-
-func git(t *testing.T, dir string, args ...string) {
-	t.Helper()
-	out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %q: %v\n%s", args, err, out)
-	}
-}
-
 func mustResolve(t *testing.T, dataRoot, cwd string) Drawer {
 	t.Helper()
 	d, ok, err := Resolve(dataRoot, cwd)
@@ -247,27 +214,5 @@ func expectedDrawer(t *testing.T, dataRoot, root string) Drawer {
 		Dir:  filepath.Join(dataRoot, "drawers", name+"-"+hex.EncodeToString(sum[:])[:8]),
 		Path: path,
 		Name: name,
-	}
-}
-
-func assertEmptyDir(t *testing.T, dir string) {
-	t.Helper()
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(entries) != 0 {
-		t.Errorf("%s has %d entries, want none", dir, len(entries))
-	}
-}
-
-func assertPerm(t *testing.T, path string, want os.FileMode) {
-	t.Helper()
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := info.Mode().Perm(); got != want {
-		t.Errorf("mode of %s = %o, want %o", path, got, want)
 	}
 }
