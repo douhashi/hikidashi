@@ -28,7 +28,8 @@ type hooksFile struct {
 
 // TestPluginRoutesEveryHandledEventToHook は、hooks.json が hikidashi hook に繋ぐイベントが
 // classify の扱うイベントとちょうど一致し、各イベントで同期に 1 度だけ、絞り込みなしで起動することを確かめる。
-// 絞り込みは classify が行うため、matcher で入力を落とすと状態の遷移を取りこぼす。
+// 絞り込みは classify が行うため、matcher で入力を落とすと状態の遷移や compact 後の備忘録の注入を取りこぼす。
+// async にすると SessionStart の stdout が Claude に届かず、備忘録を注入できない。
 func TestPluginRoutesEveryHandledEventToHook(t *testing.T) {
 	data, err := os.ReadFile(hooksJSON)
 	if err != nil {
