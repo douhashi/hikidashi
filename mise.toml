@@ -4,6 +4,10 @@
 [tools]
 # git hooks ランナー。`mise run setup` が .git/hooks へ導入する。
 lefthook = "1.13.6"
+# hikidashi 本体の言語（docs/development/architecture.md の「構成要素」）。
+go = "1.27.1"
+# Go の lint。設定は .golangci.yml。
+golangci-lint = "2.13.2"
 
 [tasks.setup]
 description = "git hooks を導入し、開発を始められる状態にする"
@@ -16,7 +20,16 @@ description = "ドキュメントの書式契約を検査する"
 # Python 3 標準ライブラリのみで動き、この検査自体は追加の依存を持たない。
 run = ["python3 scripts/check-docs-format.py"]
 
+[tasks."lint:go"]
+description = "Go のコードを lint する（整形の崩れを含む）"
+# 有効にする linter・formatter は .golangci.yml。
+run = ["golangci-lint run ./..."]
+
+[tasks.test]
+description = "Go のテストを実行する"
+run = ["go test ./..."]
+
 [tasks.check]
 description = "フルチェック（CI で docs/ 以外に変更がある PR に実行する）"
 # 品質タスクを束ねる入口。テスト等を足したら depends に加える（CI 側は変えない）。
-depends = ["lint:docs"]
+depends = ["lint:docs", "lint:go", "test"]

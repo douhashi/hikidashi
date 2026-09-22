@@ -1,0 +1,11 @@
+# golangci-lint v2 の設定。`mise run lint:go` と `mise run check` が使う。
+version: "2"
+
+linters:
+  # golangci-lint 既定の linter 群（`golangci-lint help linters` の Enabled by default）。
+  default: standard
+
+formatters:
+  # 整形の崩れを lint として落とす。
+  enable:
+    - gofmt

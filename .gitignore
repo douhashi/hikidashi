@@ -13,3 +13,6 @@
 
 # Temp design notes
 .tmp/
+
+# go build がルートに出すバイナリ
+/hikidashi
