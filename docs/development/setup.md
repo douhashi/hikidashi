@@ -50,6 +50,21 @@ Go のコードは次の 2 つで検査する。どちらも `mise run check` �
 - `mise run lint:go`: golangci-lint（既定の standard linters と gofmt）。設定は `.golangci.yml`
 - `mise run test`: `go test ./...`
 
+`mise run test` は `plugin/hooks/hooks.json` の網羅も検査する。`hikidashi hook` に繋ぐイベントが
+`internal/hook/hook.go` の `events`（扱うイベントの SSoT）とちょうど一致し、matcher も async も持たないこと。
+
+## plugin を試す
+
+plugin の変更は、導入せずに 1 セッションだけ読み込ませて確かめる。
+
+```sh
+go install ./cmd/hikidashi      # hooks は PATH 上の hikidashi を呼ぶ
+claude --plugin-dir plugin
+claude plugin validate plugin   # manifest と hooks.json の検査
+```
+
+`validate` の version の警告は意図どおりである。version を書かず、コミット SHA を版にして更新を配る。
+
 ## CI
 
 CI は PR の変更範囲で実行内容を分ける。
