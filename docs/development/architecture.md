@@ -90,8 +90,8 @@ stateDiagram-v2
 
 | イベント | matcher | 状態 | その他の処理 |
 | --- | --- | --- | --- |
-| `SessionStart` | `startup` `resume` `clear` `fork` | `idle` | 引き出しを登録し、備忘録を stdout に出す |
-| `SessionStart` | `compact` | 変えない | 備忘録を stdout に出す（圧縮で失われるため） |
+| `SessionStart` | `startup` `resume` `clear` `fork` | `idle` | 引き出しを登録し、備忘録を注入する |
+| `SessionStart` | `compact` | 変えない | 備忘録を注入する（圧縮で失われるため） |
 | `UserPromptSubmit` | — | `running` | |
 | `PermissionRequest` | — | `waiting` | |
 | `Notification` | `elicitation_dialog` `elicitation_url_dialog` | `waiting` | |
@@ -105,7 +105,7 @@ stateDiagram-v2
 - `PostToolUse` は `waiting` のときだけ `running` にする（状態図どおり）。ファイルが無い・`idle` のセッションは走行中にしない
 - `SessionStart`（`compact` 以外）は、ファイルがあっても `idle` で書き直し、`started_at` を今にする
 - 他のイベントでファイルが無ければ（hikidashi の導入前から続くセッション等）、`started_at` を今にして作る
-- 表の matcher の絞り込みは hikidashi が入力の `hook_event_name`・`source`・`notification_type` で行い、plugin の matcher に頼らない。何もしない入力（`compact`・表に無い通知種別・未知のイベント）は git を起動する前に終える
+- 表の matcher の絞り込みは hikidashi が入力の `hook_event_name`・`source`・`notification_type` で行い、plugin の matcher に頼らない。何もしない入力（表に無い通知種別・未知のイベント）は git を起動する前に終える
 - `session_id` はファイル名に使うため `[A-Za-z0-9_-]+` に限る。それ以外はパス横断を防ぐため入力の誤りとし、ログに残して終える
 
 ### 中断の扱い
@@ -181,6 +181,22 @@ hook は入力の `cwd` から引き出しを決める。
 - 引き出しの一覧は `drawers/` 配下の列挙で得る。ディレクトリの作成は冪等なので、同時に発火しても競合・重複しない。同時の初回登録では `drawer.json` が後勝ちになるが、どちらも正しい内容なので許容する
 - submodule を親の引き出しに寄せない理由: 独立したリポジトリであり、語彙どおり別の案件として扱う。submodule の worktree も別の引き出しになる
 - `$TMUX_PANE` が空（tmux 外）のセッションは状態を記録しない。一覧から選んでも移動先が無いため。登録と備忘録の注入は行う
+
+## 備忘録
+
+### 注入
+
+- `SessionStart` のすべての `source` で、`notes.md` を JSON の `hookSpecificOutput.additionalContext` に入れて stdout に 1 回で出す。tmux 外のセッションにも出す
+- `additionalContext` は見出し `# hikidashi notes for <name> (<notes.md の絶対パス>)`、空行、`notes.md` の本文の順に並べる
+- 素の Markdown で出さない理由: 本文が `{`〜`}` だと JSON と解釈され、注入の成否が内容次第になる
+- `notes.md` が無い・空白だけなら何も出さない。注入と状態の記録は独立させ、片方が失敗してももう片方を行う
+- Claude Code は 10,000 字を超える `additionalContext` をファイルに退避し、そのパスと先頭 2,000 字のプレビュー（見出しを含む）だけを渡す。Claude は退避先を読むよう促されないため、常に見せたいことは先頭に書く。hikidashi は切り詰めない
+
+### `hikidashi notes`
+
+- 作業ディレクトリの引き出しを登録し、`notes.md` が無ければ空（0600）で作ってから `$EDITOR` で開く。既存の中身は変えない
+- `$EDITOR` は空白で分割し、シェルを介さずに起動する。引用符付きの値には対応しない
+- 引数があれば exit 2。Git 管理外・`$EDITOR` が空・エディタの失敗は exit 1 とする。Git 管理外・`$EDITOR` が空ではデータルートに何も作らない
 
 ## 次アクションの抽出
 

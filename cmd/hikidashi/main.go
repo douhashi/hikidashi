@@ -18,7 +18,8 @@ type command struct {
 
 // commands は hikidashi が持つサブコマンドの表。
 var commands = []command{
-	{name: "hook", summary: "record the session state from a Claude Code hook input", run: runHook},
+	{name: "hook", summary: "record the session state and inject notes from a Claude Code hook input", run: runHook},
+	{name: "notes", summary: "open the notes of the current drawer in $EDITOR", run: runNotes},
 }
 
 func main() {

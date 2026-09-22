@@ -78,6 +78,26 @@ func TestHookRecordsSessionSilently(t *testing.T) {
 	testutil.AssertNotExist(t, filepath.Join(dataRoot, "hikidashi.log"))
 }
 
+func TestHookWritesNotesToStdout(t *testing.T) {
+	dataRoot := hookEnv(t)
+	testutil.IsolateGit(t)
+	repo := testutil.NewRepo(t, filepath.Join(t.TempDir(), "api"))
+	d, _, err := drawer.Resolve(dataRoot, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	testutil.WriteFile(t, d.NotesPath(), "remember the staging DB\n")
+
+	code, stdout, stderr := invoke(commands, hookInput("SessionStart", repo), "hook")
+
+	if code != 0 || stderr != "" {
+		t.Errorf("exit code, stderr = %d, %q, want 0, empty", code, stderr)
+	}
+	if !strings.HasPrefix(stdout, `{"hookSpecificOutput":`) || !strings.Contains(stdout, "remember the staging DB") {
+		t.Errorf("stdout = %q, want the notes as hook output JSON", stdout)
+	}
+}
+
 func TestHookLogsInvalidInputAndExitsZero(t *testing.T) {
 	dataRoot := hookEnv(t)
 

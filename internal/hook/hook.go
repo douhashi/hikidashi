@@ -1,13 +1,17 @@
-// Package hook は Claude Code の hook 入力から引き出しを登録し、セッション状態を記録する。
+// Package hook は Claude Code の hook 入力から引き出しを登録し、セッション状態を記録し、備忘録を注入する。
 // 遷移の規則は docs/development/architecture.md の「状態モデル」を参照。
 package hook
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"os"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/douhashi/hikidashi/internal/drawer"
@@ -33,8 +37,10 @@ type action int
 const (
 	// ignore は何もしない。
 	ignore action = iota
-	// start は引き出しを登録し、セッション状態を idle で書き直す。
+	// start は引き出しを登録し、備忘録を注入し、セッション状態を idle で書き直す。
 	start
+	// inject は備忘録を注入するだけで、状態を変えない。
+	inject
 	// enter は目標の状態に入る。既にその状態なら書かない。
 	enter
 	// resume は waiting のときだけ running に戻す。
@@ -44,9 +50,9 @@ const (
 )
 
 // Run は stdin の hook 入力を受け、dataRoot 配下の引き出しとセッション状態を更新する。
-// getenv は環境変数を、now は現在時刻を与える。stdout には何も出さない。
+// getenv は環境変数を、now は現在時刻を与える。stdout には SessionStart の備忘録だけを出す。
 // HIKIDASHI_DISABLE=1 のときは stdin も読まずに終える（抽出の子プロセスからの再帰を断つ）。
-func Run(dataRoot string, stdin io.Reader, getenv func(string) string, now time.Time) error {
+func Run(dataRoot string, stdin io.Reader, stdout io.Writer, getenv func(string) string, now time.Time) error {
 	if getenv("HIKIDASHI_DISABLE") == "1" {
 		return nil
 	}
@@ -55,7 +61,7 @@ func Run(dataRoot string, stdin io.Reader, getenv func(string) string, now time.
 		return err
 	}
 	// apply が失敗するのは classify が知るイベントだけで、session_id も検証済みなので、そのまま前置してよい。
-	if err := apply(dataRoot, in, getenv, now); err != nil {
+	if err := apply(dataRoot, in, stdout, getenv, now); err != nil {
 		return fmt.Errorf("%s %s: %w", in.HookEventName, in.SessionID, err)
 	}
 	return nil
@@ -87,9 +93,9 @@ func parse(stdin io.Reader) (input, error) {
 func classify(in input) (action, session.State) {
 	switch in.HookEventName {
 	case "SessionStart":
-		// compact は同じセッションの続きであり、状態を変えない。
+		// compact は同じセッションの続きであり、状態を変えない。圧縮で失われる備忘録だけを入れ直す。
 		if in.Source == "compact" {
-			return ignore, ""
+			return inject, ""
 		}
 		return start, session.Idle
 	case "UserPromptSubmit":
@@ -112,8 +118,9 @@ func classify(in input) (action, session.State) {
 	return ignore, ""
 }
 
-// apply は入力の作用を引き出しとセッション状態に反映する。何もしない入力では git も起動しない。
-func apply(dataRoot string, in input, getenv func(string) string, now time.Time) error {
+// apply は入力の作用を引き出し・stdout・セッション状態に反映する。何もしない入力では git も起動しない。
+// 備忘録の注入と状態の記録は、片方が失敗してももう片方を行う。
+func apply(dataRoot string, in input, stdout io.Writer, getenv func(string) string, now time.Time) error {
 	act, state := classify(in)
 	if act == ignore {
 		return nil
@@ -128,6 +135,49 @@ func apply(dataRoot string, in input, getenv func(string) string, now time.Time)
 			return err
 		}
 	}
+	var injected error
+	if act == start || act == inject {
+		injected = injectNotes(stdout, d)
+	}
+	if act == inject {
+		return injected
+	}
+	return errors.Join(injected, record(d, act, state, in, getenv, now))
+}
+
+// hookOutput は SessionStart の hook が stdout に出す JSON。
+type hookOutput struct {
+	HookSpecificOutput sessionStartOutput `json:"hookSpecificOutput"`
+}
+
+// sessionStartOutput は SessionStart の hookSpecificOutput。additionalContext が Claude のコンテキストに入る。
+type sessionStartOutput struct {
+	HookEventName     string `json:"hookEventName"`
+	AdditionalContext string `json:"additionalContext"`
+}
+
+// injectNotes は引き出しの notes.md を、出所の見出しを付けて SessionStart の additionalContext として stdout に 1 回で書く。
+// notes.md が無い・空白だけなら何も書かない。
+func injectNotes(stdout io.Writer, d drawer.Drawer) error {
+	path := d.NotesPath()
+	notes, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(string(notes)) == "" {
+		return nil
+	}
+	return json.NewEncoder(stdout).Encode(hookOutput{sessionStartOutput{
+		HookEventName:     "SessionStart",
+		AdditionalContext: fmt.Sprintf("# hikidashi notes for %s (%s)\n\n%s", d.Name, path, notes),
+	}})
+}
+
+// record は act をセッション状態に反映する。
+func record(d drawer.Drawer, act action, state session.State, in input, getenv func(string) string, now time.Time) error {
 	// tmux 外のセッションは一覧から選んでも移動先が無いため、状態を記録しない。
 	pane := getenv("TMUX_PANE")
 	if pane == "" {
