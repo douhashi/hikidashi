@@ -2,7 +2,8 @@
 
 ## 前提
 
-[mise](https://mise.jdx.dev/) が入っていること。**それ以外のツールの版はすべて `mise.toml` が持つ**。
+[mise](https://mise.jdx.dev/) と git 2.31 以上（`rev-parse --path-format` を使うため）が入っていること。
+**それ以外のツールの版はすべて `mise.toml` が持つ**。
 
 ## 2 コマンド
 
