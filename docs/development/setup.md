@@ -25,6 +25,8 @@ mise run setup   # git hooks を導入し、開発を始められる状態にす
 |---|---|
 | `mise run setup` | git hooks の導入 |
 | `mise run lint:docs` | ドキュメントの書式契約の検査 |
+| `mise run lint:go` | Go の lint（整形の崩れを含む） |
+| `mise run test` | Go のテスト |
 | `mise run check` | フルチェック（品質タスクをすべて束ねる） |
 
 ## 何が検査されるか
@@ -41,6 +43,11 @@ mise run setup   # git hooks を導入し、開発を始められる状態にす
 
 検査器は **Python 3 標準ライブラリのみ**で動く。開発環境の有無に関わらず走らせられ、
 言語やツールチェーンを増やしても影響を受けない。
+
+Go のコードは次の 2 つで検査する。どちらも `mise run check` に含まれる。
+
+- `mise run lint:go`: golangci-lint（既定の standard linters と gofmt）。設定は `.golangci.yml`
+- `mise run test`: `go test ./...`
 
 ## CI
 
