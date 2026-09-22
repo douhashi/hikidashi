@@ -56,6 +56,11 @@
           {
             "type": "command",
             "command": "hikidashi hook"
+          },
+          {
+            "type": "command",
+            "command": "hikidashi extract",
+            "async": true
           }
         ]
       }

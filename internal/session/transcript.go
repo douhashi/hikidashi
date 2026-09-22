@@ -1,12 +1,14 @@
 package session
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
 	"io/fs"
 	"os"
+	"slices"
 	"strings"
 	"time"
 )
@@ -18,10 +20,11 @@ const tailSize = 64 << 10
 // ツール実行中の中断では `[Request interrupted by user for tool use]` になる。
 const interruptionPrefix = "[Request interrupted by user"
 
-// entry は transcript の 1 行のうち、中断の判定に使うフィールド。
+// entry は transcript の 1 行のうち、hikidashi が使うフィールド。
 type entry struct {
 	Type        string    `json:"type"`
 	IsSidechain bool      `json:"isSidechain"`
+	IsMeta      bool      `json:"isMeta"`
 	Timestamp   time.Time `json:"timestamp"`
 	Message     struct {
 		// Content は文字列、または type を持つ要素の配列。
@@ -48,7 +51,7 @@ func Interrupted(transcriptPath string, since time.Time) (time.Time, bool, error
 		if json.Unmarshal(lines[i], &e) != nil || e.Type != "user" || e.IsSidechain {
 			continue
 		}
-		if isInterruption(e.Message.Content) && e.Timestamp.After(since) {
+		if isInterruption(e) && e.Timestamp.After(since) {
 			return e.Timestamp, true, nil
 		}
 		return time.Time{}, false, nil
@@ -79,23 +82,61 @@ func readTail(path string) ([]byte, error) {
 	return data, nil
 }
 
-// isInterruption は user のエントリの content が中断の記録かを返す。
-func isInterruption(content json.RawMessage) bool {
-	var text string
-	if json.Unmarshal(content, &text) == nil {
+// isInterruption は user のエントリ e が中断の記録かを返す。
+func isInterruption(e entry) bool {
+	return slices.ContainsFunc(e.texts(), func(text string) bool {
 		return strings.HasPrefix(text, interruptionPrefix)
+	})
+}
+
+// texts は e の content のうちテキストを順に返す。content が文字列ならそれ自体、配列なら text の要素だけとし、
+// ツールの入出力（tool_use / tool_result）や thinking は含めない。
+func (e entry) texts() []string {
+	var text string
+	if json.Unmarshal(e.Message.Content, &text) == nil {
+		return []string{text}
 	}
 	var parts []struct {
 		Type string `json:"type"`
 		Text string `json:"text"`
 	}
-	if json.Unmarshal(content, &parts) != nil {
-		return false
+	if json.Unmarshal(e.Message.Content, &parts) != nil {
+		return nil
 	}
+	var texts []string
 	for _, p := range parts {
-		if p.Type == "text" && strings.HasPrefix(p.Text, interruptionPrefix) {
-			return true
+		if p.Type == "text" {
+			texts = append(texts, p.Text)
 		}
 	}
-	return false
+	return texts
+}
+
+// ScanMessages は transcript を先頭から 1 行ずつ流し読みし、人間と Claude の会話のテキストを順に fn へ渡す。
+// role は user か assistant で、text は 1 エントリのテキストを空行で繋いだもの。
+// 渡すのはサブエージェントのものでも、Claude Code が差し込んだもの（isMeta）でもない user / assistant のエントリで、
+// テキストを持たないもの（ツールの入出力だけ等）・空白だけのものは飛ばす。書きかけの行や JSON でない行も飛ばす。
+func ScanMessages(transcriptPath string, fn func(role, text string)) error {
+	f, err := os.Open(transcriptPath)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+
+	r := bufio.NewReader(f)
+	for {
+		line, err := r.ReadBytes('\n')
+		var e entry
+		if json.Unmarshal(line, &e) == nil && (e.Type == "user" || e.Type == "assistant") && !e.IsSidechain && !e.IsMeta {
+			if text := strings.Join(e.texts(), "\n\n"); strings.TrimSpace(text) != "" {
+				fn(e.Type, text)
+			}
+		}
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+	}
 }

@@ -1,0 +1,24 @@
+{
+  "type": "object",
+  "properties": {
+    "summary": {
+      "type": "string",
+      "description": "What the session is working on right now, in one or two sentences."
+    },
+    "human_next": {
+      "type": "string",
+      "description": "The next action the human should take. Empty if the human has nothing to do."
+    },
+    "claude_next": {
+      "type": "string",
+      "description": "The next action Claude will take once it continues. Empty if Claude has nothing planned."
+    },
+    "blockers": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "What is blocking progress. Empty if nothing is."
+    }
+  },
+  "required": ["summary", "human_next", "claude_next", "blockers"],
+  "additionalProperties": false
+}

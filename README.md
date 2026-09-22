@@ -24,6 +24,7 @@ claude plugin install hikidashi@hikidashi
 
 `go install` の出力先（`go env GOBIN`、未設定なら `$(go env GOPATH)/bin`）は `PATH` に通しておく。
 plugin は起動時に読み込まれるため、動いている Claude Code のセッションは再起動する。
+ターンが終わるたびに `claude -p`（haiku）で次アクションを要約するため、その分の利用枠を使う。
 
 > **private の間の注記**: リポジトリが private の間は、上の手順の前に次を済ませる。
 > `gh auth setup-git` は `go install` と `marketplace add` の両方が使う git に GitHub の認証を渡す。

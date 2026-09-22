@@ -83,7 +83,7 @@ func List(drawerDir string) ([]Session, error) {
 
 // Write は s を引き出し drawerDir の sessions/ にアトミックに書く。sessions/ が無ければ 0700 で作る。
 func Write(drawerDir string, s Session) error {
-	if err := os.MkdirAll(dir(drawerDir), 0o700); err != nil {
+	if err := makeDir(drawerDir); err != nil {
 		return err
 	}
 	return jsonfile.Write(file(drawerDir, s.SessionID), s)
@@ -103,6 +103,11 @@ func Remove(drawerDir, id string) error {
 		}
 	}
 	return nil
+}
+
+// makeDir は引き出し drawerDir の sessions/ を、無ければ 0700 で作る。
+func makeDir(drawerDir string) error {
+	return os.MkdirAll(dir(drawerDir), 0o700)
 }
 
 func dir(drawerDir string) string {

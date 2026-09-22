@@ -11,17 +11,25 @@ import (
 	"github.com/douhashi/hikidashi/internal/hook"
 )
 
-// runHook は hikidashi hook の入口。Claude Code を妨げないよう、panic を含むどの失敗でも exit 0 で終え、
-// エラーはデータルートの hikidashi.log にだけ残す（docs/development/architecture.md の「設計原則」4）。
+// runHook は hikidashi hook の入口。
 func runHook(_ []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	if err := handleHook(stdin, stdout); err != nil {
-		logHookError(stderr, fmt.Sprintf("%s hook: %v\n", time.Now().Format(time.RFC3339), err))
+	return runFromHook("hook", stderr, func(dataRoot string) error {
+		return hook.Run(dataRoot, stdin, stdout, os.Getenv, time.Now())
+	})
+}
+
+// runFromHook は Claude Code の hook から起動されるサブコマンド name の共通の入口。既定のデータルートで fn を呼ぶ。
+// Claude Code を妨げないよう、panic を含むどの失敗でも exit 0 で終え、エラーは `<時刻> <name>: <エラー>` の行で
+// データルートの hikidashi.log にだけ残す（docs/development/architecture.md の「設計原則」4）。
+func runFromHook(name string, stderr io.Writer, fn func(dataRoot string) error) int {
+	if err := recoverRun(fn); err != nil {
+		logError(stderr, fmt.Sprintf("%s %s: %v\n", time.Now().Format(time.RFC3339), name, err))
 	}
 	return 0
 }
 
-// handleHook は hook.Run を既定のデータルートで呼び、panic もエラーとして返す。
-func handleHook(stdin io.Reader, stdout io.Writer) (err error) {
+// recoverRun は既定のデータルートで fn を呼び、panic もエラーとして返す。
+func recoverRun(fn func(dataRoot string) error) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("panic: %v", r)
@@ -31,11 +39,11 @@ func handleHook(stdin io.Reader, stdout io.Writer) (err error) {
 	if err != nil {
 		return err
 	}
-	return hook.Run(root, stdin, stdout, os.Getenv, time.Now())
+	return fn(root)
 }
 
-// logHookError は line をログに追記する。ログにも書けなければ、line と書けなかった理由を stderr に出す。
-func logHookError(stderr io.Writer, line string) {
+// logError は line をログに追記する。ログにも書けなければ、line と書けなかった理由を stderr に出す。
+func logError(stderr io.Writer, line string) {
 	if err := appendLog(line); err != nil {
 		report(stderr, line)
 		report(stderr, fmt.Sprintf("hikidashi: write log: %v\n", err))
