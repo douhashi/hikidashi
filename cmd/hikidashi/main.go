@@ -23,6 +23,7 @@ var commands = []command{
 	{name: "hook", summary: "record the session state and inject notes from a Claude Code hook input", run: runHook},
 	{name: "notes", summary: "open the notes of the current drawer in $EDITOR", run: runNotes},
 	{name: "open", summary: "choose a session with fzf and switch to its tmux pane", run: runOpen},
+	{name: "remove", summary: "unregister a drawer (the current one if omitted), keeping its non-empty notes", run: runRemove},
 	{name: "status", summary: "print the number of sessions waiting for input, for the tmux status bar", run: runStatus},
 }
 
@@ -75,6 +76,11 @@ func usage(cmds []command) string {
 		fmt.Fprintf(&b, "  %-*s  %s\n", width, c.name, c.summary)
 	}
 	return b.String()
+}
+
+// notRegistered は reason（登録済みの引き出しが見つからない理由）に、hikidashi add で登録できることを添えたエラーを返す。
+func notRegistered(reason string) error {
+	return fmt.Errorf("%s; run \"hikidashi add\" in the repository to register it", reason)
 }
 
 // report は stderr に書く。stderr に書けなければ失敗を伝える先が無いため、書き込みの失敗は捨てる。

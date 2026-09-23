@@ -40,6 +40,8 @@ hikidashi の設計原則と仕組みの構成。何を解くか・語彙は [`.
 flowchart LR
   AD[hikidashi add] -- 書く --> D[(drawer.json)]
   AD -- new-session --> TS[tmux セッション]
+  RM[hikidashi remove] -- 消す --> D
+  RM -- 消す --> S
   CC[Claude Code] -- hook 入力 JSON --> H[hikidashi hook]
   CC -- Stop（async） --> X[hikidashi extract]
   H -- 書く --> S[(sessions/ID.json)]
@@ -57,6 +59,7 @@ flowchart LR
 | --- | --- | --- |
 | `hikidashi` | Go の単一バイナリ | 以下のサブコマンドをすべて持つ。`PATH` 上に置く |
 | `hikidashi add` | 人間が起動 | 作業ディレクトリの案件を引き出しとして登録し、tmux セッションを用意する |
+| `hikidashi remove` | 人間が起動 | 案件の登録を取り消す。空でない備忘録は残す |
 | `hikidashi hook` | hook から起動 | 登録済みの引き出しへの状態の記録、備忘録の注入 |
 | `hikidashi extract` | `Stop` の async hook から起動 | transcript の末尾から次アクションを抽出する |
 | `hikidashi open` | tmux の `display-popup` から起動 | fzf で一覧を出し、選んだ pane へ移動する |
@@ -175,12 +178,12 @@ stateDiagram-v2
 
 ## 引き出しの解決と登録
 
-hook・extract・`hikidashi notes`・`hikidashi add` は `cwd`（hook の入力、または作業ディレクトリ）から引き出しを決める。
+hook・extract・`hikidashi notes`・`hikidashi add`・引数なしの `hikidashi remove` は `cwd`（hook の入力、または作業ディレクトリ）から引き出しを決める。
 
 1. `git -C <cwd> rev-parse --path-format=absolute --git-common-dir --show-toplevel` を 1 回呼ぶ。共通の `.git` の basename が `.git` ならその親を、それ以外（submodule 等）は toplevel をリポジトリのルートとし、シンボリックリンクを解決する。worktree からでもメイン worktree に寄り、submodule はそれ自身の引き出しになる
 2. git が非 0 で終わる `cwd`（Git 管理外・bare・`.git` の中・存在しない）は追跡しない（1 案件 = 1 リポジトリ）。備忘録の注入も行わない。git を起動できないときだけエラーにする
 3. `<slug>` は `<name>-<ルートの絶対パスの SHA-256 の先頭 8 桁>` とする（例: `api-3f2a9c1b`）
-4. `drawers/<slug>/drawer.json` があれば登録済みとし（`hikidashi add` が書く。下記「`hikidashi add`」）、それだけを記録・注入・抽出・`hikidashi notes` の対象にする。無ければ（未登録）何も作らず何もしない。壊れていればエラーにする
+4. `drawers/<slug>/drawer.json` があれば登録済みとし（`hikidashi add` が書き、`hikidashi remove` が消す）、それだけを記録・注入・抽出・`hikidashi notes` の対象にする。無ければ（未登録）何も作らず何もしない。壊れていればエラーにする
 
 - slug をハッシュにする理由: パスを `-` で繋ぐ方式は `a-b/c` と `a/b-c` が衝突し、衝突の検出と回避を別途書くことになる。ハッシュなら固定長で衝突を考えなくてよく、読みやすさは `name` の接頭辞で保つ
 - 未登録はエラーではない。hook・extract は `hikidashi.log` にも何も書かずに exit 0 で終える。人が登録していないリポジトリで Claude Code が動くのは普通のことであり、そのたびに記録やログを残さないため
@@ -199,6 +202,17 @@ hook・extract・`hikidashi notes`・`hikidashi add` は `cwd`（hook の入力�
 - tmux のセッション名は slug の `.` と `:` を `_` に置き換えたもの（例: `example_com-3f2a9c1b`）。tmux がこの 2 文字をターゲットの区切りに使うため
 - セッション名を slug から作る理由: 引き出しと 1 対 1 で決まり、同名で別パスのリポジトリでも衝突しない。対応を保存する欄も要らない
 - `has-session` のターゲットに `=` を付けるのは、tmux が付けないと前方一致で別のセッションにも一致させるため
+
+### `hikidashi remove`
+
+1. 対象の引き出しを決める。引数が無ければ作業ディレクトリから上記の規則で、1 個あれば登録済みの引き出しから名前で引く
+2. `drawer.json` を先に消して登録を外す（以後 hook・extract・`open`・`status` の対象外になる）。次に `notes.md` 以外（`sessions/`）を消す。`notes.md` が無い・空白だけなら引き出しのディレクトリごと消す
+3. `drawer: <slug> (removed)` を stdout に出し、備忘録を残したときだけ `notes: <notes.md の絶対パス> (kept)` を続ける
+
+- 名前は slug の完全一致を優先し、無ければ `name` が一意に一致する引き出しとする。`name` が複数に一致すれば候補の slug を出してエラーにする。この解決は `open` のプレビューと共有する
+- 空でない備忘録を残すのは、確認なしに人の書いたものを失わないため。`drawer.json` が無いので記録・一覧・注入の対象にならず、同じパスの `hikidashi add` で slug が同じ引き出しに戻る
+- tmux セッションには触れない。pane で動く Claude Code やエディタの作業を巻き込むため。閉じるのは人が行う
+- 引数が 2 個以上なら exit 2。Git 管理外・未登録・曖昧な名前・I/O の失敗は、理由を stderr に出して exit 1 とする。未登録なら `hikidashi add` で登録できることも出す。見つからないときはデータルートにも tmux にも触れない
 
 ## 備忘録
 

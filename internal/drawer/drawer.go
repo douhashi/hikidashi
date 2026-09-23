@@ -1,4 +1,4 @@
-// Package drawer は作業ディレクトリから引き出しを解決・登録・検索し、登録済みの引き出しを列挙する。
+// Package drawer は作業ディレクトリや名前から引き出しを解決・登録・検索・取り消しし、登録済みの引き出しを列挙する。
 // 規則は docs/development/architecture.md の「引き出しの解決と登録」を参照。
 package drawer
 
@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -140,6 +141,79 @@ func (d Drawer) TmuxSession() string {
 // NotesPath は引き出しの備忘録（notes.md）のパスを返す。ファイルがあるとは限らない。
 func (d Drawer) NotesPath() string {
 	return filepath.Join(d.Dir, "notes.md")
+}
+
+// Notes は引き出しの備忘録の本文を返す。notes.md が無い・空白だけなら ok=false を返す。
+func (d Drawer) Notes() (string, bool, error) {
+	data, err := os.ReadFile(d.NotesPath())
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	notes := string(data)
+	return notes, strings.TrimSpace(notes) != "", nil
+}
+
+// Unregister は引き出しの登録を取り消す。先に drawer.json を消して以後の記録・一覧の対象から外し、
+// 次に notes.md 以外（sessions/ 等）を消す。備忘録が無い・空白だけならディレクトリごと消す。
+// 空でない備忘録は残し、同じリポジトリの再登録（Register）で戻る。残したかどうかを返す。
+func (d Drawer) Unregister() (notesKept bool, err error) {
+	if err := os.Remove(metaFile(d.Dir)); err != nil {
+		return false, err
+	}
+	_, notesKept, err = d.Notes()
+	if err != nil {
+		return false, err
+	}
+	if !notesKept {
+		return false, os.RemoveAll(d.Dir)
+	}
+	entries, err := os.ReadDir(d.Dir)
+	if err != nil {
+		return false, err
+	}
+	for _, e := range entries {
+		if e.Name() == filepath.Base(d.NotesPath()) {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(d.Dir, e.Name())); err != nil {
+			return false, err
+		}
+	}
+	return true, nil
+}
+
+// Find は dataRoot に登録済みの引き出しから、name を slug または名前（Name）に持つものを返す。
+// slug の完全一致を優先し、無ければ名前の一致が 1 件のときだけそれを返す。どれにも一致しなければ ok=false、
+// 名前が複数に一致すれば候補の slug を並べたエラーを返す。
+func Find(dataRoot, name string) (Drawer, bool, error) {
+	drawers, err := List(dataRoot)
+	if err != nil {
+		return Drawer{}, false, err
+	}
+	if i := slices.IndexFunc(drawers, func(d Drawer) bool { return d.Slug() == name }); i >= 0 {
+		return drawers[i], true, nil
+	}
+
+	var matched []Drawer
+	for _, d := range drawers {
+		if d.Name == name {
+			matched = append(matched, d)
+		}
+	}
+	switch len(matched) {
+	case 0:
+		return Drawer{}, false, nil
+	case 1:
+		return matched[0], true, nil
+	}
+	slugs := make([]string, 0, len(matched))
+	for _, d := range matched {
+		slugs = append(slugs, d.Slug())
+	}
+	return Drawer{}, false, fmt.Errorf("%q matches more than one drawer: %s", name, strings.Join(slugs, ", "))
 }
 
 // List は dataRoot 配下に登録済みの引き出しを、ディレクトリ名の順にすべて返す。
