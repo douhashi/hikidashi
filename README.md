@@ -11,6 +11,7 @@ hikidashi 本体（`hikidashi` コマンド）と、Claude Code の hooks を `h
 - git 2.31 以上
 - tmux（tmux の pane で動くセッションだけを記録する）
 - fzf（`hikidashi open` が一覧に使う）
+- GitHub CLI（`gh`。`hikidashi show` が Open な Issue を数えるのに使う。`gh auth login` 済みであること）
 - Go
 - Claude Code
 
@@ -89,6 +90,29 @@ set -g status-right '#(hikidashi status) %H:%M'
 
 件数の代わりに `!` が出たら、集計に失敗している。tmux は理由（stderr）を捨てるため、
 端末で `hikidashi status` を実行して理由を見る。
+
+## 案件の状況を見る
+
+`hikidashi show` は、登録済みの全案件の概況を 1 案件 1 行で出す。
+Open な Issue の件数と、状態ごとのセッションの件数が並ぶ。
+
+```sh
+hikidashi show
+# api       api-3f2a9c1b       issues:3  running:1  waiting:1  idle:2
+# frontend  frontend-0a1b2c3d  issues:?  running:0  waiting:0  idle:0
+```
+
+`issues:?` は件数を取れなかった（GitHub のリモートが無い・`gh` が使えない等）ことを表し、理由は stderr に出る。
+件数は `gh` が選ぶリポジトリのもので、fork で `upstream` を持つリポジトリでは `gh repo set-default` で数える先を選べる。
+
+`hikidashi show <案件>` は、その案件のセッションごとの状態・放置時間・pane・次アクションと、備忘録を出す。
+`<案件>` にはリポジトリ名か、同名の案件があるときは slug（`api-3f2a9c1b`）を指定する。
+
+```sh
+hikidashi show api
+```
+
+出力は素のテキストで、Claude Code に読ませてもそのまま使える。
 
 ## 無効化・削除
 

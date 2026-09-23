@@ -24,6 +24,7 @@ var commands = []command{
 	{name: "notes", summary: "open the notes of the current drawer in $EDITOR", run: runNotes},
 	{name: "open", summary: "choose a session with fzf and switch to its tmux pane", run: runOpen},
 	{name: "remove", summary: "unregister a drawer (the current one if omitted), keeping its non-empty notes", run: runRemove},
+	{name: "show", summary: "print an overview of all drawers, or the details of one drawer", run: runShow},
 	{name: "status", summary: "print the number of sessions waiting for input, for the tmux status bar", run: runStatus},
 }
 
