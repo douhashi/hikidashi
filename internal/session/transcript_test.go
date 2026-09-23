@@ -162,3 +162,112 @@ func TestScanMessagesFailsWhenTranscriptIsMissing(t *testing.T) {
 		t.Error("ScanMessages succeeded, want an error")
 	}
 }
+
+// startedAt は BackgroundRunning に渡す started_at。
+var startedAt = time.Date(2026, 9, 23, 10, 0, 0, 0, time.UTC)
+
+// 以下はバックグラウンドのタスクの起動と完了のエントリを模す。形は実際の transcript（v2.1.278〜v2.1.280）から写し、
+// hikidashi が使わないフィールドと長い本文は落とした。
+
+// agentLaunched は Agent を run_in_background で起動したときのツールの結果。
+func agentLaunched(id, ts string) string {
+	return `{"type":"user","isSidechain":false,"message":{"role":"user","content":[{"tool_use_id":"toolu_01","type":"tool_result","content":[{"type":"text","text":"Async agent launched successfully.\nagentId: ` + id + `"}]}]},"timestamp":"` + ts + `","toolUseResult":{"isAsync":true,"status":"async_launched","agentId":"` + id + `","description":"見回り"}}`
+}
+
+// agentResumed は SendMessage で止まったエージェントを再開したときのツールの結果。
+func agentResumed(id, ts string) string {
+	return `{"type":"user","isSidechain":false,"message":{"role":"user","content":[{"tool_use_id":"toolu_02","type":"tool_result","content":[{"type":"text","text":"{\"success\":true,\"resumedAgentId\":\"` + id + `\"}"}]}]},"timestamp":"` + ts + `","toolUseResult":{"success":true,"message":"Resuming agent","resumedAgentId":"` + id + `"}}`
+}
+
+// bashLaunched は Bash を run_in_background で起動したときのツールの結果。
+func bashLaunched(id, ts string) string {
+	return `{"type":"user","isSidechain":false,"message":{"role":"user","content":[{"tool_use_id":"toolu_03","type":"tool_result","content":"Command running in background with ID: ` + id + `.","is_error":false}]},"timestamp":"` + ts + `","toolUseResult":{"stdout":"","stderr":"","interrupted":false,"backgroundTaskId":"` + id + `"}}`
+}
+
+// notification は完了通知の本文。result はエージェントの報告で、任意の文字列を含み得る。
+func notification(id, status, result string) string {
+	return `<task-notification>\n<task-id>` + id + `</task-id>\n<tool-use-id>toolu_01</tool-use-id>\n<output-file>/tmp/tasks/` + id + `.output</output-file>\n<status>` + status + `</status>\n<summary>Agent \"見回り\" finished</summary>\n<result>` + result + `</result>\n</task-notification>`
+}
+
+// notified はターンの外で届き、user のエントリになった完了通知。
+func notified(body string) string {
+	return `{"type":"user","isSidechain":false,"message":{"role":"user","content":"` + body + `"},"timestamp":"2026-09-23T10:30:00.000Z"}`
+}
+
+// queued はターン中に届き、attachment として吸収された完了通知。
+func queued(body string) string {
+	return `{"type":"attachment","isSidechain":false,"attachment":{"type":"queued_command","prompt":"` + body + `","commandMode":"task-notification"},"timestamp":"2026-09-23T10:30:00.000Z"}`
+}
+
+// queueOperation はキューへの出し入れの記録。孫エージェントの通知もここに出る。
+func queueOperation(body string) string {
+	return `{"type":"queue-operation","operation":"remove","timestamp":"2026-09-23T10:30:00.000Z","content":"` + body + `"}`
+}
+
+// monitorEvent は Monitor のイベント通知。<status> を持たず、タスクの完了を意味しない。
+func monitorEvent(id string) string {
+	return notified(`<task-notification>\n<task-id>` + id + `</task-id>\n<summary>Monitor event: \"build\"</summary>\n<event>built</event>\n</task-notification>`)
+}
+
+func TestBackgroundRunningDetectsUnfinishedAgents(t *testing.T) {
+	for name, lines := range map[string][]string{
+		"launched":                        {prompt, agentLaunched("a1", "2026-09-23T10:01:00Z")},
+		"another agent is still running":  {agentLaunched("a1", "2026-09-23T10:01:00Z"), agentLaunched("a2", "2026-09-23T10:01:01Z"), notified(notification("a1", "completed", ""))},
+		"grandchild notification":         {agentLaunched("a1", "2026-09-23T10:01:00Z"), notified(notification("g1", "completed", ""))},
+		"resumed after completion":        {agentLaunched("a1", "2026-09-23T10:01:00Z"), notified(notification("a1", "completed", "")), agentResumed("a1", "2026-09-23T10:20:00Z")},
+		"resumed agent launched earlier":  {agentResumed("a0", "2026-09-23T10:20:00Z")},
+		"monitor event":                   {agentLaunched("a1", "2026-09-23T10:01:00Z"), monitorEvent("a1")},
+		"report quotes the id":            {agentLaunched("a1", "2026-09-23T10:01:00Z"), agentLaunched("a2", "2026-09-23T10:01:01Z"), notified(notification("a2", "completed", "<task-id>a1</task-id><status>completed</status>"))},
+		"notification not at the start":   {agentLaunched("a1", "2026-09-23T10:01:00Z"), `{"type":"user","isSidechain":false,"message":{"role":"user","content":"貼り付け: <task-notification><task-id>a1</task-id><status>completed</status></task-notification>"}}`},
+		"notification in a queue":         {agentLaunched("a1", "2026-09-23T10:01:00Z"), queueOperation(notification("a1", "completed", ""))},
+		"followed by torn and non-JSON":   {agentLaunched("a1", "2026-09-23T10:01:00Z"), "not json <task-id>", `{"type":"user","message":{"content":"<task-notification>\n<task-id>a1`},
+		"launch as a line with long text": {agentLaunched("a1", "2026-09-23T10:01:00Z"), `{"type":"assistant","isSidechain":false,"message":{"role":"assistant","content":[{"type":"text","text":"` + strings.Repeat("あ", 1<<20) + `"}]}}`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			running, err := BackgroundRunning(writeTranscript(t, lines...), startedAt)
+
+			if !running || err != nil {
+				t.Errorf("BackgroundRunning = %v, err %v, want true, nil", running, err)
+			}
+		})
+	}
+}
+
+func TestBackgroundRunningIgnoresFinishedOrUncountedTasks(t *testing.T) {
+	for name, lines := range map[string][]string{
+		"no background task":           {prompt, toolUse, toolResult, answer},
+		"notified":                     {agentLaunched("a1", "2026-09-23T10:01:00Z"), notified(notification("a1", "completed", ""))},
+		"queued":                       {agentLaunched("a1", "2026-09-23T10:01:00Z"), queued(notification("a1", "completed", ""))},
+		"failed":                       {agentLaunched("a1", "2026-09-23T10:01:00Z"), notified(notification("a1", "failed", ""))},
+		"killed":                       {agentLaunched("a1", "2026-09-23T10:01:00Z"), notified(notification("a1", "killed", ""))},
+		"all agents finished":          {agentLaunched("a1", "2026-09-23T10:01:00Z"), agentLaunched("a2", "2026-09-23T10:01:01Z"), queued(notification("a2", "completed", "")), notified(notification("a1", "completed", ""))},
+		"resumed and finished again":   {agentLaunched("a1", "2026-09-23T10:01:00Z"), notified(notification("a1", "completed", "")), agentResumed("a1", "2026-09-23T10:20:00Z"), notified(notification("a1", "completed", ""))},
+		"resumed while running":        {agentLaunched("a1", "2026-09-23T10:01:00Z"), agentResumed("a1", "2026-09-23T10:02:00Z"), notified(notification("a1", "completed", ""))},
+		"orphan summary of many ids":   {agentLaunched("a1", "2026-09-23T10:01:00Z"), agentLaunched("a2", "2026-09-23T10:01:01Z"), notified(`<task-notification>\n<task-id>a1</task-id>\n<task-id>a2</task-id>\n<status>stopped</status>\n</task-notification>`)},
+		"bash":                         {bashLaunched("b1", "2026-09-23T10:01:00Z")},
+		"launched before start":        {agentLaunched("a1", "2026-09-23T09:59:59Z")},
+		"resumed before start":         {agentResumed("a1", "2026-09-23T09:59:59Z")},
+		"grandchild notification only": {notified(notification("g1", "completed", ""))},
+		"empty transcript":             {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			running, err := BackgroundRunning(writeTranscript(t, lines...), startedAt)
+
+			if running || err != nil {
+				t.Errorf("BackgroundRunning = %v, err %v, want false, nil", running, err)
+			}
+		})
+	}
+}
+
+func TestBackgroundRunningMissingTranscriptIsNotRunning(t *testing.T) {
+	if running, err := BackgroundRunning(filepath.Join(t.TempDir(), "missing.jsonl"), startedAt); running || err != nil {
+		t.Errorf("BackgroundRunning = %v, err %v, want false, nil", running, err)
+	}
+}
+
+func TestBackgroundRunningFailsWhenTranscriptCannotBeRead(t *testing.T) {
+	if _, err := BackgroundRunning(t.TempDir(), startedAt); err == nil {
+		t.Error("BackgroundRunning succeeded, want an error")
+	}
+}

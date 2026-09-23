@@ -1,6 +1,6 @@
 // Package scan は引き出しのセッションを集め、読み手（status / list / show）が表示する形に整える。
-// 終わったセッションの後始末と中断の扱いは docs/development/architecture.md の「セッションの後始末」
-// 「中断の扱い」、並び順は「hikidashi show」を参照。
+// 終わったセッションの後始末・中断・バックグラウンドのタスクの扱いは docs/development/architecture.md の
+// 「セッションの後始末」「中断の扱い」「バックグラウンドのタスクの扱い」、並び順は「hikidashi show」を参照。
 package scan
 
 import (
@@ -15,9 +15,9 @@ import (
 // Entry は一覧の 1 行に対応する、生きているセッション。
 type Entry struct {
 	Drawer drawer.Drawer
-	// Session の State は中断を反映した実効の状態。ファイルの中身とは異なり得る。
+	// Session の State は中断とバックグラウンドのタスクを反映した実効の状態。ファイルの中身とは異なり得る。
 	Session session.Session
-	// Since は放置の起点。実効の状態に入った時刻。
+	// Since は放置の起点。実効の状態に入った時刻で、バックグラウンドのタスクで running とするときは idle に入った時刻のまま。
 	Since time.Time
 	// Next は次アクション。HasNext が偽（未抽出）なら空。
 	Next    session.Next
@@ -99,6 +99,7 @@ func sortEntries(entries []Entry) {
 
 // newEntry は s の実効の状態と次アクションを求める。
 // running / waiting のまま中断されたセッションは、中断の時刻から idle とする。
+// そのうえで idle のセッションは、メインが起動したエージェントがバックグラウンドで残っていれば running とする（放置の起点は変えない）。
 func newEntry(d drawer.Drawer, s session.Session) (Entry, error) {
 	e := Entry{Drawer: d, Session: s, Since: s.StateChangedAt}
 	if s.State != session.Idle {
@@ -108,6 +109,16 @@ func newEntry(d drawer.Drawer, s session.Session) (Entry, error) {
 		}
 		if interrupted {
 			e.Session.State, e.Since = session.Idle, at
+		}
+	}
+	// transcript の全体を読むため、実効の状態が idle のときだけ確かめる。
+	if e.Session.State == session.Idle {
+		running, err := session.BackgroundRunning(s.TranscriptPath, s.StartedAt)
+		if err != nil {
+			return Entry{}, err
+		}
+		if running {
+			e.Session.State = session.Running
 		}
 	}
 
