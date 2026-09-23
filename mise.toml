@@ -13,6 +13,11 @@ golangci-lint = "2.13.2"
 description = "git hooks を導入し、開発を始められる状態にする"
 run = ["lefthook install"]
 
+[tasks.install]
+description = "開発中の hikidashi を ~/.local/bin に入れる（hooks が PATH で呼ぶ版）"
+# mise の GOBIN は Go を pin したディレクトリでしか PATH に入らず案件外の hooks から見えないため、~/.local/bin に入れる。
+run = ['GOBIN="$HOME/.local/bin" go install ./cmd/hikidashi']
+
 [tasks."lint:docs"]
 description = "ドキュメントの書式契約を検査する"
 # 書式の定義は docs/document_system/templates/。上限が無いと各変更の
