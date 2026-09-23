@@ -36,24 +36,19 @@ func notesEnv(t *testing.T, exitCode int) notesFixture {
 	return notesFixture{dataRoot: filepath.Join(home, ".hikidashi"), record: record}
 }
 
-// enterRepo は新しいリポジトリの下位ディレクトリに移り、その引き出しを返す。
+// enterRepo は引き出しを登録済みの新しいリポジトリの下位ディレクトリに移り、その引き出しを返す。
 func (f notesFixture) enterRepo(t *testing.T) drawer.Drawer {
 	t.Helper()
-	testutil.IsolateGit(t)
-	repo := testutil.NewRepo(t, filepath.Join(t.TempDir(), "api"))
+	repo, d := newRegisteredRepo(t, f.dataRoot)
 	sub := filepath.Join(repo, "src")
 	if err := os.MkdirAll(sub, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	t.Chdir(sub)
-	d, ok, err := drawer.Resolve(f.dataRoot, repo)
-	if err != nil || !ok {
-		t.Fatalf("Resolve(%q) = ok %v, err %v", repo, ok, err)
-	}
 	return d
 }
 
-// assertFailed は hikidashi notes が code で終わり、stderr が want を含み、エディタもデータルートも触っていないことを確かめる。
+// assertFailed は hikidashi notes が code で終わり、stderr が want を含み、エディタを起動せず notes.md も作っていないことを確かめる。
 func (f notesFixture) assertFailed(t *testing.T, code int, stderr string, wantCode int, want string) {
 	t.Helper()
 	if code != wantCode {
@@ -63,7 +58,10 @@ func (f notesFixture) assertFailed(t *testing.T, code int, stderr string, wantCo
 		t.Errorf("stderr = %q, want it to contain %q", stderr, want)
 	}
 	testutil.AssertNotExist(t, f.record)
-	testutil.AssertNotExist(t, f.dataRoot)
+	notes, err := filepath.Glob(filepath.Join(f.dataRoot, "drawers", "*", "notes.md"))
+	if err != nil || len(notes) != 0 {
+		t.Errorf("notes = %q, err %v, want none created", notes, err)
+	}
 }
 
 func TestNotesCreatesNotesAndOpensEditor(t *testing.T) {
@@ -106,13 +104,27 @@ func TestNotesKeepsExistingNotes(t *testing.T) {
 	}
 }
 
-func TestNotesOutsideGitFails(t *testing.T) {
-	f := notesEnv(t, 0)
-	t.Chdir(t.TempDir())
+func TestNotesOutsideRegisteredDrawerFails(t *testing.T) {
+	for name, cwd := range map[string]func(t *testing.T, f notesFixture) string{
+		"unregistered repository": func(t *testing.T, f notesFixture) string {
+			repo, _ := newRepo(t, f.dataRoot)
+			return repo
+		},
+		"outside Git": func(t *testing.T, _ notesFixture) string { return t.TempDir() },
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := notesEnv(t, 0)
+			t.Chdir(cwd(t, f))
 
-	code, _, stderr := invoke(commands, "", "notes")
+			code, _, stderr := invoke(commands, "", "notes")
 
-	f.assertFailed(t, code, stderr, 1, "not in a Git repository")
+			f.assertFailed(t, code, stderr, 1, "is not in a registered drawer")
+			if strings.Contains(stderr, "hikidashi add") {
+				t.Errorf("stderr = %q, want no mention of the not yet available hikidashi add", stderr)
+			}
+			testutil.AssertNotExist(t, f.dataRoot)
+		})
+	}
 }
 
 func TestNotesWithoutEditorFails(t *testing.T) {

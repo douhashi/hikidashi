@@ -1,10 +1,11 @@
-// Package drawer は作業ディレクトリから引き出しを解決・登録し、登録済みの引き出しを列挙する。
+// Package drawer は作業ディレクトリから引き出しを解決・登録・検索し、登録済みの引き出しを列挙する。
 // 規則は docs/development/architecture.md の「引き出しの解決と登録」を参照。
 package drawer
 
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -52,6 +53,29 @@ func Resolve(dataRoot, cwd string) (Drawer, bool, error) {
 		Path: root,
 		Name: name,
 	}, true, nil
+}
+
+// Lookup は cwd を含むリポジトリの、登録済み（drawer.json がある）の引き出しを返す。ファイルは作らない。
+// Git 管理外・未登録なら ok=false を返す。git を起動できない・drawer.json を読めない・壊れているときは error を返す。
+func Lookup(dataRoot, cwd string) (Drawer, bool, error) {
+	d, ok, err := Resolve(dataRoot, cwd)
+	if !ok || err != nil {
+		return Drawer{}, ok, err
+	}
+	file := metaFile(d.Dir)
+	data, err := os.ReadFile(file)
+	if errors.Is(err, fs.ErrNotExist) {
+		return Drawer{}, false, nil
+	}
+	if err != nil {
+		return Drawer{}, false, err
+	}
+	var meta Drawer
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return Drawer{}, false, fmt.Errorf("decode %s: %w", file, err)
+	}
+	d.CreatedAt = meta.CreatedAt
+	return d, true, nil
 }
 
 // repoRoot は cwd のリポジトリのルートを返す。共通の .git を持つ通常のリポジトリはその親

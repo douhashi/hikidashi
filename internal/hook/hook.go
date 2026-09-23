@@ -1,4 +1,4 @@
-// Package hook は Claude Code の hook 入力から引き出しを登録し、セッション状態を記録し、備忘録を注入する。
+// Package hook は Claude Code の hook 入力から、登録済みの引き出しにセッション状態を記録し、備忘録を注入する。
 // 遷移の規則は docs/development/architecture.md の「状態モデル」を参照。
 package hook
 
@@ -33,7 +33,7 @@ type action int
 const (
 	// ignore は何もしない。
 	ignore action = iota
-	// start は引き出しを登録し、備忘録を注入し、セッション状態を idle で書き直す。
+	// start は備忘録を注入し、セッション状態を idle で書き直す。
 	start
 	// inject は備忘録を注入するだけで、状態を変えない。
 	inject
@@ -45,7 +45,7 @@ const (
 	end
 )
 
-// Run は stdin の hook 入力を受け、dataRoot 配下の引き出しとセッション状態を更新する。
+// Run は stdin の hook 入力を受け、dataRoot 配下の登録済みの引き出しのセッション状態を更新する。未登録なら何もしない。
 // getenv は環境変数を、now は現在時刻を与える。stdout には SessionStart の備忘録だけを出す。
 // HIKIDASHI_DISABLE=1 のときは stdin も読まずに終える（抽出の子プロセスからの再帰を断つ）。
 func Run(dataRoot string, stdin io.Reader, stdout io.Writer, getenv func(string) string, now time.Time) error {
@@ -135,14 +135,9 @@ func apply(dataRoot string, in Input, stdout io.Writer, getenv func(string) stri
 		return nil
 	}
 
-	d, ok, err := drawer.Resolve(dataRoot, in.Cwd)
+	d, ok, err := drawer.Lookup(dataRoot, in.Cwd)
 	if err != nil || !ok {
 		return err
-	}
-	if act == start {
-		if err := d.Register(); err != nil {
-			return err
-		}
 	}
 	var injected error
 	if act == start || act == inject {

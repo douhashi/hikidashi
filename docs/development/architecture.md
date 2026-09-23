@@ -54,7 +54,7 @@ flowchart LR
 | 要素 | 実体 | 役割 |
 | --- | --- | --- |
 | `hikidashi` | Go の単一バイナリ | 以下のサブコマンドをすべて持つ。`PATH` 上に置く |
-| `hikidashi hook` | hook から起動 | 引き出しの登録、状態の記録、備忘録の注入 |
+| `hikidashi hook` | hook から起動 | 登録済みの引き出しへの状態の記録、備忘録の注入 |
 | `hikidashi extract` | `Stop` の async hook から起動 | transcript の末尾から次アクションを抽出する |
 | `hikidashi open` | tmux の `display-popup` から起動 | fzf で一覧を出し、選んだ pane へ移動する |
 | `hikidashi status` | tmux の `status-right` から起動 | 入力待ちの件数を出す |
@@ -92,7 +92,7 @@ stateDiagram-v2
 
 | イベント | matcher | 状態 | その他の処理 |
 | --- | --- | --- | --- |
-| `SessionStart` | `startup` `resume` `clear` `fork` | `idle` | 引き出しを登録し、備忘録を注入する |
+| `SessionStart` | `startup` `resume` `clear` `fork` | `idle` | 備忘録を注入する |
 | `SessionStart` | `compact` | 変えない | 備忘録を注入する（圧縮で失われるため） |
 | `UserPromptSubmit` | — | `running` | |
 | `PermissionRequest` | — | `waiting` | |
@@ -172,17 +172,18 @@ stateDiagram-v2
 
 ## 引き出しの解決と登録
 
-hook は入力の `cwd` から引き出しを決める。
+hook・extract・`hikidashi notes` は `cwd`（hook の入力、または作業ディレクトリ）から引き出しを決める。
 
 1. `git -C <cwd> rev-parse --path-format=absolute --git-common-dir --show-toplevel` を 1 回呼ぶ。共通の `.git` の basename が `.git` ならその親を、それ以外（submodule 等）は toplevel をリポジトリのルートとし、シンボリックリンクを解決する。worktree からでもメイン worktree に寄り、submodule はそれ自身の引き出しになる
 2. git が非 0 で終わる `cwd`（Git 管理外・bare・`.git` の中・存在しない）は追跡しない（1 案件 = 1 リポジトリ）。備忘録の注入も行わない。git を起動できないときだけエラーにする
 3. `<slug>` は `<name>-<ルートの絶対パスの SHA-256 の先頭 8 桁>` とする（例: `api-3f2a9c1b`）
-4. `drawers/<slug>/` を作り、`drawer.json` が無ければ書く。これが登録であり、別途の一覧ファイルは持たない
+4. `drawers/<slug>/drawer.json` があれば登録済みとし、それだけを記録・注入・抽出・`hikidashi notes` の対象にする。無ければ（未登録）何も作らず何もしない。壊れていればエラーにする
 
 - slug をハッシュにする理由: パスを `-` で繋ぐ方式は `a-b/c` と `a/b-c` が衝突し、衝突の検出と回避を別途書くことになる。ハッシュなら固定長で衝突を考えなくてよく、読みやすさは `name` の接頭辞で保つ
-- 引き出しの一覧は `drawers/` 配下の列挙で得る。ディレクトリの作成は冪等なので、同時に発火しても競合・重複しない。同時の初回登録では `drawer.json` が後勝ちになるが、どちらも正しい内容なので許容する
+- 未登録はエラーではない。hook・extract は `hikidashi.log` にも何も書かずに exit 0 で終える。人が登録していないリポジトリで Claude Code が動くのは普通のことであり、そのたびに記録やログを残さないため
+- 引き出しの一覧は `drawers/` 配下の列挙で得る。別途の一覧ファイルは持たない
 - submodule を親の引き出しに寄せない理由: 独立したリポジトリであり、語彙どおり別の案件として扱う。submodule の worktree も別の引き出しになる
-- `$TMUX_PANE` が空（tmux 外）のセッションは状態を記録しない。一覧から選んでも移動先が無いため。登録と備忘録の注入は行う
+- `$TMUX_PANE` が空（tmux 外）のセッションは状態を記録しない。一覧から選んでも移動先が無いため。備忘録の注入は行う
 
 ## 備忘録
 
@@ -196,13 +197,13 @@ hook は入力の `cwd` から引き出しを決める。
 
 ### `hikidashi notes`
 
-- 作業ディレクトリの引き出しを登録し、`notes.md` が無ければ空（0600）で作ってから `$EDITOR` で開く。既存の中身は変えない
+- 作業ディレクトリの登録済みの引き出しに、`notes.md` が無ければ空（0600）で作ってから `$EDITOR` で開く。既存の中身は変えない
 - `$EDITOR` は空白で分割し、シェルを介さずに起動する。引用符付きの値には対応しない
-- 引数があれば exit 2。Git 管理外・`$EDITOR` が空・エディタの失敗は exit 1 とする。Git 管理外・`$EDITOR` が空ではデータルートに何も作らない
+- 引数があれば exit 2。Git 管理外・未登録・`$EDITOR` が空・エディタの失敗は exit 1 とする。Git 管理外・未登録では「登録済みの引き出しの中にいない」ことを stderr に出す。Git 管理外・未登録・`$EDITOR` が空ではデータルートに何も作らない
 
 ## 次アクションの抽出
 
-1. `Stop` の async hook が `hikidashi extract` を起動する（hook の完了は待たれない）。`HIKIDASHI_DISABLE=1`・`$TMUX_PANE` が空・Git 管理外なら、stdin を読んだ後に何もせず終える
+1. `Stop` の async hook が `hikidashi extract` を起動する（hook の完了は待たれない）。`HIKIDASHI_DISABLE=1`・`$TMUX_PANE` が空・Git 管理外・未登録なら、stdin を読んだ後に何もせず終える
 2. `<session_id>.extract.lock` の中身を「再実行要求」の印とし、印を立ててから flock（待たない）を試みる。取れなければそのまま終わる。保持者は「印を消して抽出」を印が無くなるまで繰り返し、解放後に印が残っていれば取り直す（解放の直前に届いた要求を取りこぼさない）。連続したイベントは後ろ寄せで 1 回にまとまり、同じセッションの抽出は並行しない
 3. transcript の JSONL から末尾の `user` / `assistant` のテキストをバイト上限まで集める。ツールの入出力は落とす
 4. `claude -p --model haiku --output-format json --json-schema <スキーマ> --no-session-persistence --tools "" --system-prompt <プロンプト>` に会話を stdin で渡す。作業ディレクトリはデータルート、環境変数に `HIKIDASHI_DISABLE=1` を足し、120 秒で打ち切る

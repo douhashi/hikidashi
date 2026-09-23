@@ -38,7 +38,7 @@ func result(structured string) string {
 	return `{"type":"result","subtype":"success","is_error":false,"num_turns":2,"result":"","permission_denials":[],"structured_output":` + structured + `}`
 }
 
-// fixture は tmux の中の Claude Code から Stop で起動された extract の環境。
+// fixture は登録済みの引き出しのリポジトリで、tmux の中の Claude Code から Stop で起動された extract の環境。
 type fixture struct {
 	dataRoot   string
 	repo       string
@@ -57,6 +57,9 @@ func newFixture(t *testing.T) fixture {
 	d, ok, err := drawer.Resolve(dataRoot, repo)
 	if err != nil || !ok {
 		t.Fatalf("Resolve(%q) = ok %v, err %v", repo, ok, err)
+	}
+	if err := d.Register(); err != nil {
+		t.Fatal(err)
 	}
 	f := fixture{
 		dataRoot:   dataRoot,
@@ -231,11 +234,17 @@ func TestRunKeepsPreviousNextActionWhenExtractionFails(t *testing.T) {
 func TestRunDoesNothingForSessionsItDoesNotTrack(t *testing.T) {
 	for name, tc := range map[string]struct {
 		env   map[string]string
-		input func(f fixture) string
+		input func(t *testing.T, f fixture) string
 	}{
-		"disabled":           {env: map[string]string{"HIKIDASHI_DISABLE": "1"}, input: func(fixture) string { return "not json" }},
-		"outside tmux":       {env: map[string]string{"TMUX_PANE": ""}, input: func(fixture) string { return "not json" }},
-		"outside a Git repo": {input: func(f fixture) string { return strings.Replace(f.input(), f.repo, filepath.Dir(f.repo), 1) }},
+		"disabled":     {env: map[string]string{"HIKIDASHI_DISABLE": "1"}, input: func(*testing.T, fixture) string { return "not json" }},
+		"outside tmux": {env: map[string]string{"TMUX_PANE": ""}, input: func(*testing.T, fixture) string { return "not json" }},
+		"outside a Git repo": {input: func(_ *testing.T, f fixture) string {
+			return strings.Replace(f.input(), f.repo, filepath.Dir(f.repo), 1)
+		}},
+		"unregistered": {input: func(t *testing.T, f fixture) string {
+			other := testutil.NewRepo(t, filepath.Join(t.TempDir(), "web"))
+			return strings.Replace(f.input(), f.repo, other, 1)
+		}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			f := newFixture(t)
@@ -243,7 +252,7 @@ func TestRunDoesNothingForSessionsItDoesNotTrack(t *testing.T) {
 				t.Setenv(k, v)
 			}
 
-			if err := Run(f.dataRoot, strings.NewReader(tc.input(f))); err != nil {
+			if err := Run(f.dataRoot, strings.NewReader(tc.input(t, f))); err != nil {
 				t.Errorf("Run: %v", err)
 			}
 
@@ -252,6 +261,7 @@ func TestRunDoesNothingForSessionsItDoesNotTrack(t *testing.T) {
 			}
 			testutil.AssertNotExist(t, f.lockFile())
 			testutil.AssertNotExist(t, f.nextFile())
+			testutil.AssertEntries(t, filepath.Join(f.dataRoot, "drawers"), filepath.Base(f.drawer.Dir))
 		})
 	}
 }

@@ -11,7 +11,7 @@ import (
 )
 
 // runNotes は hikidashi notes の入口。現在の引き出しの notes.md を $EDITOR で開く。
-// 引数があれば exit 2、引き出しを決められない・$EDITOR が無い・エディタが失敗したときは exit 1 とする。
+// 引数があれば exit 2、登録済みの引き出しの中にいない・$EDITOR が無い・エディタが失敗したときは exit 1 とする。
 func runNotes(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) > 0 {
 		report(stderr, "Usage: hikidashi notes\n")
@@ -39,8 +39,8 @@ func runNotes(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// prepareNotes は作業ディレクトリの引き出しを登録し、notes.md が無ければ空（0600）で作って、そのパスを返す。
-// Git 管理外ならデータルートに何も作らずエラーを返す。
+// prepareNotes は作業ディレクトリの登録済みの引き出しに、notes.md が無ければ空（0600）で作って、そのパスを返す。
+// Git 管理外・未登録ならデータルートに何も作らずエラーを返す。
 func prepareNotes() (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -50,15 +50,12 @@ func prepareNotes() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	d, ok, err := drawer.Resolve(root, cwd)
+	d, ok, err := drawer.Lookup(root, cwd)
 	if err != nil {
 		return "", err
 	}
 	if !ok {
-		return "", fmt.Errorf("%s is not in a Git repository", cwd)
-	}
-	if err := d.Register(); err != nil {
-		return "", err
+		return "", fmt.Errorf("%s is not in a registered drawer", cwd)
 	}
 
 	path := d.NotesPath()

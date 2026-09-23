@@ -127,6 +127,84 @@ func TestResolveFailsWhenGitCannotStart(t *testing.T) {
 	}
 }
 
+func TestLookupFindsRegisteredDrawerFromWorktreeAndSubdirectory(t *testing.T) {
+	testutil.IsolateGit(t)
+	base := t.TempDir()
+	repo := testutil.NewRepo(t, filepath.Join(base, "api"))
+	sub := filepath.Join(repo, "a")
+	if err := os.MkdirAll(sub, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	worktree := filepath.Join(base, "api-wt")
+	testutil.Git(t, repo, "worktree", "add", "-q", worktree)
+	dataRoot := t.TempDir()
+	want := expectedDrawer(t, dataRoot, repo)
+	if err := want.Register(); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, cwd := range []string{repo, sub, worktree} {
+		t.Run(filepath.Base(cwd), func(t *testing.T) {
+			got, ok, err := Lookup(dataRoot, cwd)
+
+			if err != nil || !ok {
+				t.Fatalf("Lookup(%q) = ok %v, err %v, want the registered drawer", cwd, ok, err)
+			}
+			if got.Dir != want.Dir || got.Path != want.Path || got.Name != want.Name || got.CreatedAt.IsZero() {
+				t.Errorf("Lookup(%q) = %+v, want %+v with created_at", cwd, got, want)
+			}
+		})
+	}
+}
+
+func TestLookupDoesNotFindUnregisteredDrawer(t *testing.T) {
+	testutil.IsolateGit(t)
+	base := t.TempDir()
+	repo := testutil.NewRepo(t, filepath.Join(base, "repo"))
+	plain := filepath.Join(base, "plain")
+	if err := os.Mkdir(plain, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	for name, cwd := range map[string]string{
+		"unregistered repository": repo,
+		"not a repository":        plain,
+	} {
+		t.Run(name, func(t *testing.T) {
+			dataRoot := t.TempDir()
+
+			_, ok, err := Lookup(dataRoot, cwd)
+
+			if ok || err != nil {
+				t.Errorf("Lookup(%q) = ok %v, err %v, want ok false, err nil", cwd, ok, err)
+			}
+			testutil.AssertEntries(t, dataRoot)
+		})
+	}
+}
+
+func TestLookupFailsOnBrokenDrawerJSON(t *testing.T) {
+	testutil.IsolateGit(t)
+	repo := testutil.NewRepo(t, filepath.Join(t.TempDir(), "api"))
+	dataRoot := t.TempDir()
+	d := expectedDrawer(t, dataRoot, repo)
+	testutil.WriteFile(t, filepath.Join(d.Dir, "drawer.json"), `{"path":`)
+
+	if _, ok, err := Lookup(dataRoot, repo); ok || err == nil {
+		t.Errorf("Lookup = ok %v, err %v, want an error", ok, err)
+	}
+}
+
+func TestLookupFailsWhenGitCannotStart(t *testing.T) {
+	testutil.IsolateGit(t)
+	repo := testutil.NewRepo(t, filepath.Join(t.TempDir(), "repo"))
+	t.Setenv("PATH", t.TempDir())
+
+	if _, _, err := Lookup(t.TempDir(), repo); err == nil {
+		t.Error("Lookup succeeded without git, want an error")
+	}
+}
+
 func TestRegisterWritesDrawerJSONReadableOnlyByOwner(t *testing.T) {
 	dataRoot := filepath.Join(t.TempDir(), ".hikidashi")
 	d := Drawer{Dir: filepath.Join(dataRoot, "drawers", "api-3f2a9c1b"), Path: "/src/api", Name: "api"}
