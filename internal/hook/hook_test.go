@@ -35,7 +35,18 @@ type fixture struct {
 	drawer   drawer.Drawer
 }
 
+// newFixture は引き出しを登録済みのリポジトリで fixture を作る。
 func newFixture(t *testing.T) fixture {
+	t.Helper()
+	f := newUnregisteredFixture(t)
+	if err := f.drawer.Register(); err != nil {
+		t.Fatal(err)
+	}
+	return f
+}
+
+// newUnregisteredFixture は引き出しを登録していないリポジトリで fixture を作る。データルートは空のまま。
+func newUnregisteredFixture(t *testing.T) fixture {
 	t.Helper()
 	testutil.IsolateGit(t)
 	repo := testutil.NewRepo(t, filepath.Join(t.TempDir(), "api"))
@@ -228,17 +239,37 @@ func (f fixture) assertOutcome(t *testing.T, want outcome, before *string) {
 	}
 }
 
-func TestRunSessionStartRegistersDrawer(t *testing.T) {
-	f := newFixture(t)
+func TestRunDoesNothingForUnregisteredDrawer(t *testing.T) {
+	f := newUnregisteredFixture(t)
+	// どのイベントも、登録済みなら何かをする入力にする。
+	extra := map[string]string{"source": "startup", "notification_type": "elicitation_dialog"}
 
-	if _, err := f.run(f.input("SessionStart", map[string]string{"source": "startup"}), nil); err != nil {
+	for event := range events {
+		stdout, err := f.run(f.input(event, extra), nil)
+
+		if err != nil {
+			t.Errorf("Run(%s): %v", event, err)
+		}
+		if stdout != "" {
+			t.Errorf("Run(%s) stdout = %q, want empty", event, stdout)
+		}
+	}
+
+	testutil.AssertEntries(t, f.dataRoot)
+}
+
+func TestRunRecordsSessionOfWorktreeInRegisteredDrawer(t *testing.T) {
+	f := newFixture(t)
+	worktree := filepath.Join(t.TempDir(), "api-wt")
+	testutil.Git(t, f.repo, "worktree", "add", "-q", worktree)
+	f.repo = worktree
+
+	if _, err := f.run(f.input("UserPromptSubmit", nil), nil); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
-	got := testutil.ReadFile(t, filepath.Join(f.drawer.Dir, "drawer.json"))
-	if !strings.Contains(got, `"path": "`+f.drawer.Path+`"`) {
-		t.Errorf("drawer.json = %s, want path %q", got, f.drawer.Path)
-	}
+	f.assertOutcome(t, startRunning, nil)
+	testutil.AssertEntries(t, filepath.Join(f.dataRoot, "drawers"), filepath.Base(f.drawer.Dir))
 }
 
 func TestRunWritesFilesReadableOnlyByOwner(t *testing.T) {
@@ -254,7 +285,7 @@ func TestRunWritesFilesReadableOnlyByOwner(t *testing.T) {
 	testutil.AssertPerm(t, f.sessionFile(), 0o600)
 }
 
-func TestRunWithoutTmuxPaneRegistersButDoesNotRecord(t *testing.T) {
+func TestRunWithoutTmuxPaneDoesNotRecord(t *testing.T) {
 	f := newFixture(t)
 	noPane := map[string]string{"TMUX_PANE": ""}
 
@@ -268,7 +299,6 @@ func TestRunWithoutTmuxPaneRegistersButDoesNotRecord(t *testing.T) {
 		}
 	}
 
-	testutil.ReadFile(t, filepath.Join(f.drawer.Dir, "drawer.json"))
 	testutil.AssertNotExist(t, filepath.Dir(f.sessionFile()))
 }
 
@@ -439,7 +469,7 @@ func TestRunDisabledDoesNotReadInput(t *testing.T) {
 	if stdout.Len() != 0 {
 		t.Errorf("stdout = %q, want empty", stdout.String())
 	}
-	testutil.AssertEntries(t, f.drawer.Dir, "notes.md")
+	testutil.AssertEntries(t, f.drawer.Dir, "drawer.json", "notes.md")
 }
 
 // unreadable は読まれたらテストを失敗させる stdin。
@@ -451,7 +481,7 @@ func (u unreadable) Read([]byte) (int, error) {
 }
 
 func TestRunOutsideGitDoesNothing(t *testing.T) {
-	f := newFixture(t)
+	f := newUnregisteredFixture(t)
 	f.repo = t.TempDir()
 
 	stdout, err := f.run(f.input("SessionStart", map[string]string{"source": "startup"}), nil)
@@ -537,7 +567,7 @@ func TestRunRejectsInvalidInput(t *testing.T) {
 			if _, err := f.run(in, nil); err == nil {
 				t.Error("Run succeeded, want an error")
 			}
-			testutil.AssertEntries(t, f.dataRoot)
+			testutil.AssertEntries(t, f.drawer.Dir, "drawer.json")
 		})
 	}
 }

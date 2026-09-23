@@ -40,7 +40,7 @@ const (
 )
 
 // Run は stdin の Stop の hook 入力を受け、そのセッションの次アクションを抽出して dataRoot 配下に書く。
-// HIKIDASHI_DISABLE=1（抽出の子プロセス）・tmux 外・Git 管理外のセッションでは、stdin を読んだ後に何もせず終える。
+// HIKIDASHI_DISABLE=1（抽出の子プロセス）・tmux 外・Git 管理外・未登録の引き出しのセッションでは、stdin を読んだ後に何もせず終える。
 // 同じセッションの抽出は並行させず、抽出中に届いた要求は後ろ寄せで 1 回にまとめる。
 func Run(dataRoot string, stdin io.Reader) error {
 	data, err := io.ReadAll(stdin)
@@ -54,7 +54,7 @@ func Run(dataRoot string, stdin io.Reader) error {
 	if err != nil {
 		return err
 	}
-	d, ok, err := drawer.Resolve(dataRoot, in.Cwd)
+	d, ok, err := drawer.Lookup(dataRoot, in.Cwd)
 	if err != nil || !ok {
 		return err
 	}

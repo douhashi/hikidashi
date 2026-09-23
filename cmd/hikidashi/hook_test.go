@@ -22,6 +22,28 @@ func hookEnv(t *testing.T) string {
 	return filepath.Join(home, ".hikidashi")
 }
 
+// newRepo は新しいリポジトリを作り、そのリポジトリと dataRoot 配下の引き出しを返す。引き出しは登録しない。
+func newRepo(t *testing.T, dataRoot string) (string, drawer.Drawer) {
+	t.Helper()
+	testutil.IsolateGit(t)
+	repo := testutil.NewRepo(t, filepath.Join(t.TempDir(), "api"))
+	d, ok, err := drawer.Resolve(dataRoot, repo)
+	if err != nil || !ok {
+		t.Fatalf("Resolve(%q) = ok %v, err %v", repo, ok, err)
+	}
+	return repo, d
+}
+
+// newRegisteredRepo は newRepo のリポジトリの引き出しを登録して返す。
+func newRegisteredRepo(t *testing.T, dataRoot string) (string, drawer.Drawer) {
+	t.Helper()
+	repo, d := newRepo(t, dataRoot)
+	if err := d.Register(); err != nil {
+		t.Fatal(err)
+	}
+	return repo, d
+}
+
 func hookInput(event, cwd string) string {
 	return fmt.Sprintf(`{"session_id":"s1","transcript_path":"/t.jsonl","cwd":%q,"hook_event_name":%q,"source":"startup"}`, cwd, event)
 }
@@ -61,8 +83,7 @@ func assertLog(t *testing.T, dataRoot, name string, wants ...*regexp.Regexp) {
 
 func TestHookRecordsSessionSilently(t *testing.T) {
 	dataRoot := hookEnv(t)
-	testutil.IsolateGit(t)
-	repo := testutil.NewRepo(t, filepath.Join(t.TempDir(), "api"))
+	repo, d := newRegisteredRepo(t, dataRoot)
 
 	code, stdout, stderr := invoke(commands, hookInput("SessionStart", repo), "hook")
 
@@ -70,22 +91,13 @@ func TestHookRecordsSessionSilently(t *testing.T) {
 	if stderr != "" {
 		t.Errorf("stderr = %q, want empty", stderr)
 	}
-	d, _, err := drawer.Resolve(dataRoot, repo)
-	if err != nil {
-		t.Fatal(err)
-	}
 	testutil.ReadFile(t, filepath.Join(d.Dir, "sessions", "s1.json"))
 	testutil.AssertNotExist(t, filepath.Join(dataRoot, "hikidashi.log"))
 }
 
 func TestHookWritesNotesToStdout(t *testing.T) {
 	dataRoot := hookEnv(t)
-	testutil.IsolateGit(t)
-	repo := testutil.NewRepo(t, filepath.Join(t.TempDir(), "api"))
-	d, _, err := drawer.Resolve(dataRoot, repo)
-	if err != nil {
-		t.Fatal(err)
-	}
+	repo, d := newRegisteredRepo(t, dataRoot)
 	testutil.WriteFile(t, d.NotesPath(), "remember the staging DB\n")
 
 	code, stdout, stderr := invoke(commands, hookInput("SessionStart", repo), "hook")
@@ -96,6 +108,22 @@ func TestHookWritesNotesToStdout(t *testing.T) {
 	if !strings.HasPrefix(stdout, `{"hookSpecificOutput":`) || !strings.Contains(stdout, "remember the staging DB") {
 		t.Errorf("stdout = %q, want the notes as hook output JSON", stdout)
 	}
+}
+
+func TestHookIgnoresUnregisteredRepositorySilently(t *testing.T) {
+	dataRoot := hookEnv(t)
+	repo, _ := newRepo(t, dataRoot)
+
+	for _, event := range []string{"SessionStart", "UserPromptSubmit", "PermissionRequest", "Stop", "SessionEnd"} {
+		code, stdout, stderr := invoke(commands, hookInput(event, repo), "hook")
+
+		assertSilentSuccess(t, code, stdout)
+		if stderr != "" {
+			t.Errorf("%s: stderr = %q, want empty", event, stderr)
+		}
+	}
+
+	testutil.AssertNotExist(t, dataRoot)
 }
 
 func TestHookLogsInvalidInputAndExitsZero(t *testing.T) {

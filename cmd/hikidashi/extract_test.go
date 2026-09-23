@@ -7,15 +7,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/douhashi/hikidashi/internal/drawer"
 	"github.com/douhashi/hikidashi/internal/session"
 	"github.com/douhashi/hikidashi/internal/testutil"
 )
 
 func TestExtractWritesNextActionSilently(t *testing.T) {
 	dataRoot := hookEnv(t)
-	testutil.IsolateGit(t)
-	repo := testutil.NewRepo(t, filepath.Join(t.TempDir(), "api"))
+	repo, d := newRegisteredRepo(t, dataRoot)
 	transcript := filepath.Join(t.TempDir(), "s1.jsonl")
 	testutil.WriteFile(t, transcript, `{"type":"user","message":{"role":"user","content":"テストを直して"}}`+"\n")
 	claude := testutil.NewFakeClaude(t)
@@ -32,14 +30,27 @@ func TestExtractWritesNextActionSilently(t *testing.T) {
 	if stderr != "" {
 		t.Errorf("stderr = %q, want empty", stderr)
 	}
-	d, _, err := drawer.Resolve(dataRoot, repo)
-	if err != nil {
-		t.Fatal(err)
-	}
 	if next, ok, err := session.ReadNext(d.Dir, "s1"); err != nil || !ok || next.Summary != "テストを直している" {
 		t.Errorf("ReadNext = %+v, ok %v, err %v, want the extracted next action", next, ok, err)
 	}
 	testutil.AssertNotExist(t, filepath.Join(dataRoot, "hikidashi.log"))
+}
+
+func TestExtractIgnoresUnregisteredRepositorySilently(t *testing.T) {
+	dataRoot := hookEnv(t)
+	repo, _ := newRepo(t, dataRoot)
+	claude := testutil.NewFakeClaude(t)
+
+	code, stdout, stderr := invoke(commands, hookInput("Stop", repo), "extract")
+
+	assertSilentSuccess(t, code, stdout)
+	if stderr != "" {
+		t.Errorf("stderr = %q, want empty", stderr)
+	}
+	if calls := claude.Calls(t); len(calls) != 0 {
+		t.Errorf("claude ran %d times, want never", len(calls))
+	}
+	testutil.AssertNotExist(t, dataRoot)
 }
 
 func TestExtractLogsFailureAndExitsZero(t *testing.T) {
