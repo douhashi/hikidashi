@@ -68,7 +68,7 @@ plugin は起動時に読み込まれるため、動いている Claude Code の
 ```tmux
 # prefix + o でプロジェクトの一覧を開く。-E で、切り替えた後や Esc で閉じた後にポップアップも閉じる。
 # -d / で Git 管理外から起動し、常に全プロジェクトの一覧を出す。
-bind-key o display-popup -E -d / -w 80% -h 60% hikidashi open
+bind-key o display-popup -E -d / -w 90% -h 80% hikidashi open
 
 # 入力待ちのセッションの件数を出す（0 件なら何も出さない）。
 set -g status-right '#(hikidashi status) %H:%M'
@@ -130,7 +130,9 @@ hikidashi open api      # 名前を指定する
 hikidashi open          # 今いるリポジトリ（worktree・サブディレクトリを含む）のプロジェクト
 ```
 
-引数を省いて Git 管理外で実行すると、全プロジェクトを fzf に並べ、選んだプロジェクトのセッションを開く（プレビューは `hikidashi show <プロジェクト>`）。
+引数を省いて Git 管理外で実行すると、全プロジェクトを `hikidashi list` と同じ表の行で fzf に並べ、選んだプロジェクトのセッションを開く。
+表の見出しは一覧の上に固定され、絞り込みはプロジェクトの名前にだけ当たる。
+プレビュー（`hikidashi show <プロジェクト>`）は、端末の幅が 100 桁以上なら一覧の下に全幅で、狭ければ右に出る。
 未登録のリポジトリで引数を省くと、何も開かずに `hikidashi add` を案内する。
 
 ### プロジェクトの状況を見る（`hikidashi list`・`hikidashi show`）

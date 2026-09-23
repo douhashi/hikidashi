@@ -86,6 +86,24 @@ func TestTableKeepsNotesColumnWhenNarrow(t *testing.T) {
 	}
 }
 
+func TestTableLinesSplitHeaderAndRowsWithoutBottomBorder(t *testing.T) {
+	summaries := []Summary{
+		{Drawer: drawer.Drawer{Dir: "/data/drawers/api-3f2a9c1b", Name: "api"}, Issues: Issues{Count: 12}, Running: 1, Note: "0123456789abcdef"},
+		{Drawer: drawer.Drawer{Dir: "/data/drawers/frontend-0a1b2c3d", Name: "frontend"}, Waiting: 2},
+	}
+
+	header, rows := TableLines(summaries, 60)
+
+	// 色と幅は Table と同じで、選べない見出しの 3 行と、summaries の順の 1 引き出し 1 行に分かれる。下の罫線は無い。
+	table := strings.Split(Table(summaries, 60), "\n")
+	if !slices.Equal(header, table[:3]) {
+		t.Errorf("header = %q, want %q", header, table[:3])
+	}
+	if !slices.Equal(rows, table[3:5]) {
+		t.Errorf("rows = %q, want %q", rows, table[3:5])
+	}
+}
+
 func TestFirstLineIsTheFirstNonBlankLine(t *testing.T) {
 	for notes, want := range map[string]string{
 		"":                      "",

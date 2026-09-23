@@ -10,6 +10,8 @@ go = "1.27.1"
 golangci-lint = "2.13.2"
 # リリースのビルドと公開。設定は .goreleaser.yaml。
 goreleaser = "2.18.2"
+# hikidashi open の一覧。絞り込みのテストが本物の fzf を使う。
+fzf = "0.74.2"
 
 [tasks.setup]
 description = "git hooks を導入し、開発を始められる状態にする"

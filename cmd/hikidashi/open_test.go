@@ -1,34 +1,43 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/douhashi/hikidashi/internal/drawer"
+	"github.com/douhashi/hikidashi/internal/session"
 	"github.com/douhashi/hikidashi/internal/testutil"
 )
 
-// openEnv は fzf と tmux を偽物に差し替え、tmux の中から open を起動したように整える。
+// openEnv は hikidashi show のテストの環境（偽の gh と生きた claude）に加えて fzf と tmux を偽物に差し替え、
+// tmux の中から open を起動したように整える。
 // 偽の fzf は受け取った引数・標準入力・環境変数 CLICOLOR_FORCE を dir に書き残し、FAKE_FZF_SELECT を選んだ行として返して FAKE_FZF_EXIT で終わる。
+// realFzf は差し替える前の PATH で見つけた本物の fzf（mise.toml が入れる版）で、見つからなければ空。
 type openEnv struct {
-	dir      string
-	dataRoot string
-	tmux     *testutil.FakeTmux
+	showEnv
+	dir     string
+	realFzf string
+	tmux    *testutil.FakeTmux
 }
 
 func newOpenEnv(t *testing.T) openEnv {
 	t.Helper()
-	dataRoot := isolateHome(t)
+	base := newShowEnv(t)
+	realFzf, _ := exec.LookPath("fzf")
 	t.Setenv("TMUX", "/tmp/tmux-1000/default,1234,0")
 	dir := t.TempDir()
 	t.Setenv("FAKE_DIR", dir)
 	t.Setenv("FAKE_FZF_SELECT", "")
 	t.Setenv("FAKE_FZF_EXIT", "0")
-	// プレビューの色の強制を確かめるため、利用者の環境の色の設定を持ち込まない。
+	// 一覧とプレビューの色の強制を確かめるため、利用者の環境の色の設定を持ち込まない。
 	t.Setenv("CLICOLOR_FORCE", "")
 	t.Setenv("NO_COLOR", "")
 	writeFake(t, dir, "fzf", `printf '%s\n' "$@" > "$FAKE_DIR/fzf.args"
@@ -37,7 +46,7 @@ cat > "$FAKE_DIR/fzf.stdin"
 if [ "$FAKE_FZF_EXIT" != 0 ]; then exit "$FAKE_FZF_EXIT"; fi
 printf '%s\n' "$FAKE_FZF_SELECT"`)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	return openEnv{dir: dir, dataRoot: dataRoot, tmux: testutil.NewFakeTmux(t)}
+	return openEnv{showEnv: base, dir: dir, realFzf: realFzf, tmux: testutil.NewFakeTmux(t)}
 }
 
 func writeFake(t *testing.T, dir, name, script string) {
@@ -45,18 +54,6 @@ func writeFake(t *testing.T, dir, name, script string) {
 	if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\n"+script+"\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-}
-
-// drawer は slug の引き出しを、name のリポジトリのルート（/src/<slug>）とともに登録して返す。
-func (e openEnv) drawer(t *testing.T, name, slug string) drawer.Drawer {
-	t.Helper()
-	return e.drawerAt(t, name, slug, "/src/"+slug)
-}
-
-// drawerAt は slug の引き出しを、name のリポジトリのルート path とともに登録して返す。
-func (e openEnv) drawerAt(t *testing.T, name, slug, path string) drawer.Drawer {
-	t.Helper()
-	return registerAt(t, e.dataRoot, name, slug, path)
 }
 
 // fzfArgs は偽の fzf が受け取った引数を返す。fzf が起動されていなければ nil を返す。
@@ -67,6 +64,12 @@ func (e openEnv) fzfArgs(t *testing.T) []string {
 		return nil
 	}
 	return strings.Split(strings.TrimSuffix(testutil.ReadFile(t, path), "\n"), "\n")
+}
+
+// fzfStdin は偽の fzf が標準入力で受け取った一覧を返す。
+func (e openEnv) fzfStdin(t *testing.T) string {
+	t.Helper()
+	return testutil.ReadFile(t, filepath.Join(e.dir, "fzf.stdin"))
 }
 
 // assertTmux は偽の tmux が want の引数でこの順に呼ばれたことを確かめる。want が無ければ呼ばれていない。
@@ -209,61 +212,112 @@ func (e openEnv) outsideGit(t *testing.T) (front, api1, api2 drawer.Drawer) {
 func TestOpenOutsideGitChoosesDrawerWithFzf(t *testing.T) {
 	env := newOpenEnv(t)
 	front, api1, api2 := env.outsideGit(t)
-	// ホーム配下の引き出しは、パスのホームを ~ に縮めて出す。選択は slug で引くため、縮めても同じ引き出しが開く。
-	work := env.drawerAt(t, "work", "work-33333333", filepath.Join(filepath.Dir(env.dataRoot), "src", "work"))
-	t.Setenv("FAKE_FZF_SELECT", work.Slug()+"\twork      ~/src/work")
+	testutil.WriteFile(t, api2.NotesPath(), "本番は触らない\n")
+	env.session(t, api2, "w1", session.Waiting, time.Now())
+	env.gh.OpenIssues(t, api1.Path, 3)
+	env.gh.OpenIssues(t, api2.Path, 5)
+	// 同名の引き出しは、選んだ行の slug で後の方を引く。
+	t.Setenv("FAKE_FZF_SELECT", api2.Slug()+"\t│ api      │      5 │")
 
-	env.assertOpens(t, openCalls(work, false, "switch-client"))
-	stdin := testutil.ReadFile(t, filepath.Join(env.dir, "fzf.stdin"))
-	want := api1.Slug() + "\tapi       /src/api-11111111\n" +
-		api2.Slug() + "\tapi       /src/api-22222222\n" +
-		front.Slug() + "\tfrontend  /src/0-frontend-0123abcd\n" +
-		work.Slug() + "\twork      ~/src/work\n"
-	if stdin != want {
-		t.Errorf("fzf stdin = %q, want %q", stdin, want)
+	// Issue の件数が得られない理由（frontend）は fzf の画面に上書きされるため出さず、表の ? だけで示す。
+	env.assertOpens(t, openCalls(api2, false, "switch-client"))
+	// 見出しの 3 行は slug を持たず、各行は「slug TAB list の表の行」。下の罫線は選べる行にしないため無い。
+	want := "\t╭──────────┬────────┬─────────┬─────────┬──────┬────────────────╮\n" +
+		"\t│ DRAWER   │ ISSUES │ RUNNING │ WAITING │ IDLE │ NOTES          │\n" +
+		"\t├──────────┼────────┼─────────┼─────────┼──────┼────────────────┤\n" +
+		api1.Slug() + "\t│ api      │      3 │       0 │       0 │    0 │                │\n" +
+		api2.Slug() + "\t│ api      │      5 │       0 │       1 │    0 │ 本番は触らない │\n" +
+		front.Slug() + "\t│ frontend │      ? │       0 │       0 │    0 │                │\n"
+	if got := ansi.Strip(env.fzfStdin(t)); got != want {
+		t.Errorf("fzf stdin =\n%s\nwant\n%s", got, want)
 	}
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
+	// 出力先が端末でない（幅が分からない）ため、プレビューは右に置く。
 	wantArgs := []string{
-		"--delimiter=\t", "--with-nth=2..", "--no-sort", "--layout=reverse", "--with-shell=sh -c",
-		"--preview=" + shellQuote(exe) + " show {1}",
+		"--ansi", "--header-lines=3", "--delimiter=\t|│", "--with-nth=2..", "--nth=2", "--no-sort", "--layout=reverse",
+		"--with-shell=sh -c", "--preview=" + shellQuote(exe) + " show {1}", "--preview-window=right,50%",
 	}
 	if got := env.fzfArgs(t); !slices.Equal(got, wantArgs) {
 		t.Errorf("fzf args = %q, want %q", got, wantArgs)
 	}
 }
 
-func TestTildePath(t *testing.T) {
-	for name, tc := range map[string]struct{ path, home, want string }{
-		"under home":             {"/home/a/x", "/home/a", "~/x"},
-		"home itself":            {"/home/a", "/home/a", "~"},
-		"outside home":           {"/src/x", "/home/a", "/src/x"},
-		"sibling sharing prefix": {"/home/ab", "/home/a", "/home/ab"},
-		"home with trailing /":   {"/home/a/x", "/home/a/", "~/x"},
-		"home is root":           {"/x", "/", "/x"},
+func TestOpenOutsideGitFiltersByNameOnly(t *testing.T) {
+	env := newOpenEnv(t)
+	if env.realFzf == "" {
+		t.Fatal("fzf not found in PATH; run the tests through mise (mise.toml pins fzf)")
+	}
+	front, api1, api2 := env.outsideGit(t)
+	testutil.WriteFile(t, front.NotesPath(), "api の移行待ち\n")
+	env.gh.OpenIssues(t, api1.Path, 3)
+	t.Setenv("FAKE_FZF_EXIT", "130")
+	env.assertOpens(t, nil)
+
+	// 偽の fzf に渡った一覧と引数を、本物の fzf の --filter で絞り込む。件数と NOTES の文字には当たらない。
+	for query, want := range map[string][]string{
+		"api":    {api1.Slug(), api2.Slug()},
+		"front":  {front.Slug()},
+		"3":      nil,
+		"移行":     nil,
+		"DRAWER": nil,
 	} {
-		t.Run(name, func(t *testing.T) {
-			if got := tildePath(tc.path, tc.home); got != tc.want {
-				t.Errorf("tildePath(%q, %q) = %q, want %q", tc.path, tc.home, got, tc.want)
+		t.Run(query, func(t *testing.T) {
+			cmd := exec.Command(env.realFzf, append(env.fzfArgs(t), "--filter="+query)...)
+			cmd.Stdin = strings.NewReader(env.fzfStdin(t))
+			out, err := cmd.Output()
+			if exit, ok := errors.AsType[*exec.ExitError](err); err != nil && (!ok || exit.ExitCode() != 1) {
+				t.Fatalf("fzf --filter=%s: %v", query, err)
+			}
+			var got []string
+			for l := range strings.Lines(string(out)) {
+				slug, _, _ := strings.Cut(l, "\t")
+				got = append(got, slug)
+			}
+			if !slices.Equal(got, want) {
+				t.Errorf("fzf --filter=%s matched %q, want %q", query, got, want)
 			}
 		})
 	}
 }
 
-func TestOpenOutsideGitForcesColorInPreviewUnlessNoColor(t *testing.T) {
-	// fzf はプレビューの出力を端末でなくパイプで受けるため、色を強制しないと hikidashi show が色を落とす。
+func TestPreviewLayoutPutsPreviewBelowOnWideTerminals(t *testing.T) {
+	// 表の幅は、fzf の一覧の幅から左のカーソルと印の 2 桁と右のスクロールバーの 1 桁を引いたもの。
+	// 右のプレビューは端末の幅の 50%（切り捨て）を取り、一覧は残りになる。
+	for width, want := range map[int]struct {
+		window     string
+		tableWidth int
+	}{
+		0:   {"right,50%", 0},
+		80:  {"right,50%", 37},
+		99:  {"right,50%", 47},
+		100: {"down,50%", 97},
+		200: {"down,50%", 197},
+	} {
+		window, tableWidth := previewLayout(width)
+		if window != want.window || tableWidth != want.tableWidth {
+			t.Errorf("previewLayout(%d) = %q, %d, want %q, %d", width, window, tableWidth, want.window, want.tableWidth)
+		}
+	}
+}
+
+func TestOpenOutsideGitForcesColorInListAndPreviewUnlessNoColor(t *testing.T) {
+	// fzf は一覧を標準入力で、プレビューの出力をパイプで受けるため、色を強制しないと表と hikidashi show が色を落とす。
 	for noColor, want := range map[string]string{"": "1", "1": ""} {
 		t.Run("NO_COLOR="+noColor, func(t *testing.T) {
 			env := newOpenEnv(t)
 			_, api1, _ := env.outsideGit(t)
 			t.Setenv("NO_COLOR", noColor)
-			t.Setenv("FAKE_FZF_SELECT", api1.Slug()+"\tapi       /src/api-11111111")
+			t.Setenv("FAKE_FZF_SELECT", api1.Slug()+"\t│ api      │")
 
 			env.assertOpens(t, openCalls(api1, false, "switch-client"))
 			if got := testutil.ReadFile(t, filepath.Join(env.dir, "fzf.clicolor_force")); got != want {
 				t.Errorf("fzf CLICOLOR_FORCE = %q, want %q", got, want)
+			}
+			if stdin := env.fzfStdin(t); strings.Contains(stdin, "\x1b[") != (want != "") {
+				t.Errorf("fzf stdin = %q, want colored %v", stdin, want != "")
 			}
 		})
 	}
