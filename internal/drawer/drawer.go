@@ -126,6 +126,17 @@ func (d Drawer) Register() error {
 	return jsonfile.Write(file, d)
 }
 
+// Slug は引き出しの識別子（<name>-<ハッシュ 8 桁>）。引き出しのディレクトリ名である。
+func (d Drawer) Slug() string {
+	return filepath.Base(d.Dir)
+}
+
+// TmuxSession は引き出しに対応する tmux セッションの名前を返す。
+// tmux はセッション名の . と : をターゲットの区切りに使うため、slug のそれらを _ に置き換える。
+func (d Drawer) TmuxSession() string {
+	return strings.NewReplacer(".", "_", ":", "_").Replace(d.Slug())
+}
+
 // NotesPath は引き出しの備忘録（notes.md）のパスを返す。ファイルがあるとは限らない。
 func (d Drawer) NotesPath() string {
 	return filepath.Join(d.Dir, "notes.md")

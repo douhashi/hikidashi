@@ -55,7 +55,7 @@ func prepareNotes() (string, error) {
 		return "", err
 	}
 	if !ok {
-		return "", fmt.Errorf("%s is not in a registered drawer", cwd)
+		return "", fmt.Errorf("%s is not in a registered drawer; run \"hikidashi add\" in the repository to register it", cwd)
 	}
 
 	path := d.NotesPath()

@@ -295,6 +295,48 @@ func expectedDrawer(t *testing.T, dataRoot, root string) Drawer {
 	}
 }
 
+func TestSlugIsDrawerDirName(t *testing.T) {
+	d := Drawer{Dir: "/data/drawers/api-3f2a9c1b"}
+
+	if got, want := d.Slug(), "api-3f2a9c1b"; got != want {
+		t.Errorf("Slug = %q, want %q", got, want)
+	}
+}
+
+func TestTmuxSessionReplacesDotAndColonInSlug(t *testing.T) {
+	d := Drawer{Dir: "/data/drawers/example.com:8080-3f2a9c1b"}
+
+	if got, want := d.TmuxSession(), "example_com_8080-3f2a9c1b"; got != want {
+		t.Errorf("TmuxSession = %q, want %q", got, want)
+	}
+}
+
+func TestTmuxSessionOfRepositoryWithDot(t *testing.T) {
+	testutil.IsolateGit(t)
+	repo := testutil.NewRepo(t, filepath.Join(t.TempDir(), "example.com"))
+
+	d := mustResolve(t, t.TempDir(), repo)
+
+	if got, want := d.TmuxSession(), "example_com-"+d.Slug()[len("example.com-"):]; got != want {
+		t.Errorf("TmuxSession = %q, want %q", got, want)
+	}
+}
+
+func TestTmuxSessionSeparatesSameNameAtDifferentPaths(t *testing.T) {
+	testutil.IsolateGit(t)
+	base := t.TempDir()
+	first := testutil.NewRepo(t, filepath.Join(base, "x", "app"))
+	second := testutil.NewRepo(t, filepath.Join(base, "y", "app"))
+	dataRoot := t.TempDir()
+
+	a := mustResolve(t, dataRoot, first).TmuxSession()
+	b := mustResolve(t, dataRoot, second).TmuxSession()
+
+	if a == b {
+		t.Errorf("both repositories got the tmux session %q, want different names", a)
+	}
+}
+
 func TestNotesPathIsInDrawerDir(t *testing.T) {
 	d := Drawer{Dir: "/data/drawers/api-3f2a9c1b"}
 
