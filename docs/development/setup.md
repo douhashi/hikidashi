@@ -25,6 +25,7 @@ mise run setup   # git hooks を導入し、開発を始められる状態にす
 | タスク | 内容 |
 |---|---|
 | `mise run setup` | git hooks の導入 |
+| `mise run install` | 開発中の hikidashi を `~/.local/bin` へ導入 |
 | `mise run lint:docs` | ドキュメントの書式契約の検査 |
 | `mise run lint:go` | Go の lint（整形の崩れを含む） |
 | `mise run test` | Go のテスト |
@@ -57,9 +58,10 @@ Go のコードは次の 2 つで検査する。どちらも `mise run check` �
 ## plugin を試す
 
 plugin の変更は、導入せずに 1 セッションだけ読み込ませて確かめる。
+`~/.local/bin` が `~/go/bin` より前に PATH に入っていることを前提とする。
 
 ```sh
-go install ./cmd/hikidashi      # hooks は PATH 上の hikidashi を呼ぶ
+mise run install                # hooks は PATH 上の hikidashi を呼ぶ
 claude --plugin-dir plugin
 claude plugin validate plugin   # manifest と hooks.json の検査
 ```
