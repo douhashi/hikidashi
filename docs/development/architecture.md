@@ -83,7 +83,7 @@ flowchart LR
 - plugin はリポジトリ直下の marketplace（`.claude-plugin/marketplace.json`）から `hikidashi@hikidashi` として配る
 - plugin にはバイナリを同梱しない。プラットフォームごとのバイナリを plugin に積むと配布が重くなるため、`PATH` 上の `hikidashi` を呼ぶ
 - 外部コマンドへの依存は `git`・`tmux`・`fzf`・`claude`・`gh` に限る。`gh` は `list`・`show` が Open な Issue を数えるのにだけ使う
-- 対象 OS は Linux とする。読み手の生存確認が `/proc` に頼るため、他の OS では `status`・`list`・`show` がエラーで終わる
+- 対象 OS は Linux と macOS。生存確認は Linux は `/proc/<pid>/comm`、macOS は sysctl `kern.proc.pid` のプロセス名で行う
 
 ## 状態モデル
 
@@ -276,7 +276,7 @@ hook・extract・`hikidashi notes`・`hikidashi add`・引数なしの `hikidash
 
 - `SessionEnd` で `<session_id>.*` を消す。`--resume` で戻れば `SessionStart` で作り直される
 - `SessionEnd` は `/exit` や pane の kill（SIGHUP）では発火するが、SIGKILL やクラッシュでは発火しない
-- 取り残されたファイルは、読み手（`status` / `list` / `show`）が `claude_pid` のプロセスが生きていて名前（`/proc/<pid>/comm`）が `claude` であることを確かめ、そうでなければ消す
+- 取り残されたファイルは、読み手（`status` / `list` / `show`）が `claude_pid` のプロセスが生きていてプロセス名が `claude` であることを確かめ、そうでなければ消す
 - pane の存在では生死を判定しない。claude が死んでも pane はシェルに戻って残るため
 - 読み手が消すのは原則 2 の例外だが、消すのは書き手が二度と書かないファイルに限るため競合しない
 
