@@ -2,12 +2,10 @@ package render
 
 import (
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/douhashi/hikidashi/internal/drawer"
-	"github.com/douhashi/hikidashi/internal/session"
 	"github.com/douhashi/hikidashi/internal/testutil"
 )
 
@@ -29,34 +27,6 @@ func TestAgeTruncatesToLargestUnit(t *testing.T) {
 func TestOneLineReplacesControlCharacters(t *testing.T) {
 	if got, want := OneLine("a\nb\tc\x1b[31md"), "a b c [31md"; got != want {
 		t.Errorf("OneLine = %q, want %q", got, want)
-	}
-}
-
-func TestWriteNextWritesEveryFieldOrNotExtracted(t *testing.T) {
-	generated := time.Date(2026, 9, 23, 10, 0, 0, 0, time.UTC)
-	for name, tc := range map[string]struct {
-		next session.Next
-		ok   bool
-		want string
-	}{
-		"extracted": {
-			next: session.Next{Summary: "s", HumanNext: "h", Blockers: []string{"b1", "b2"}, GeneratedAt: generated},
-			ok:   true,
-			want: "summary:      s\nhuman_next:   h\nclaude_next:  -\nblockers:\n  - b1\n  - b2\n" +
-				"generated_at: " + generated.Local().Format(time.DateTime) + "\n",
-		},
-		"empty":         {ok: true, want: "summary:      -\nhuman_next:   -\nclaude_next:  -\nblockers:     -\ngenerated_at: -\n"},
-		"not extracted": {want: "(next action not extracted yet)\n"},
-	} {
-		t.Run(name, func(t *testing.T) {
-			var b strings.Builder
-
-			WriteNext(&b, tc.next, tc.ok)
-
-			if b.String() != tc.want {
-				t.Errorf("WriteNext =\n%s\nwant\n%s", b.String(), tc.want)
-			}
-		})
 	}
 }
 

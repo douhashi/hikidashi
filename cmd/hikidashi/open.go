@@ -126,6 +126,11 @@ func choose(lines []string, exe string, stderr io.Writer) (line string, ok bool,
 		"--preview="+shellQuote(exe)+" show {1}",
 	)
 	cmd.Stdin = strings.NewReader(strings.Join(lines, "\n") + "\n")
+	// プレビューの出力は fzf へのパイプで端末でないため、色を強制する。NO_COLOR が設定されていれば強制しない。
+	cmd.Env = os.Environ()
+	if os.Getenv("NO_COLOR") == "" {
+		cmd.Env = append(cmd.Env, "CLICOLOR_FORCE=1")
+	}
 	cmd.Stderr = stderr
 	out, err := cmd.Output()
 	if exit, exited := errors.AsType[*exec.ExitError](err); exited {

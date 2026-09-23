@@ -3,13 +3,12 @@ package main
 import (
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/douhashi/hikidashi/internal/drawer"
 	"github.com/douhashi/hikidashi/internal/show"
 )
 
-// runList は hikidashi list の入口。全引き出しの概況を 1 引き出し 1 行で stdout に出す。
+// runList は hikidashi list の入口。全引き出しの概況を 1 引き出し 1 行の表で stdout に出す。
 // 引数があれば exit 2 とする。Issue の件数が得られなかった引き出しは、理由を stderr に出したうえで exit 0 とする。
 func runList(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 	if len(args) > 0 {
@@ -18,7 +17,7 @@ func runList(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 	}
 	root, err := drawer.DefaultRoot()
 	if err == nil {
-		err = overview(root, stdout, stderr)
+		err = overview(root, colorWriter(stdout), stderr)
 	}
 	if err != nil {
 		report(stderr, fmt.Sprintf("hikidashi list: %v\n", err))
@@ -40,7 +39,7 @@ func overview(root string, stdout, stderr io.Writer) error {
 	for _, s := range summaries {
 		reportIssues(stderr, "list", s.Issues)
 	}
-	_, err = io.WriteString(stdout, strings.Join(show.Lines(summaries), "\n")+"\n")
+	_, err = io.WriteString(stdout, show.Table(summaries)+"\n")
 	return err
 }
 

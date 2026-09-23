@@ -13,7 +13,7 @@ import (
 )
 
 // openEnv は fzf と tmux を偽物に差し替え、tmux の中から open を起動したように整える。
-// 偽の fzf は受け取った引数と標準入力を dir に書き残し、FAKE_FZF_SELECT を選んだ行として返して FAKE_FZF_EXIT で終わる。
+// 偽の fzf は受け取った引数・標準入力・環境変数 CLICOLOR_FORCE を dir に書き残し、FAKE_FZF_SELECT を選んだ行として返して FAKE_FZF_EXIT で終わる。
 type openEnv struct {
 	dir      string
 	dataRoot string
@@ -28,7 +28,11 @@ func newOpenEnv(t *testing.T) openEnv {
 	t.Setenv("FAKE_DIR", dir)
 	t.Setenv("FAKE_FZF_SELECT", "")
 	t.Setenv("FAKE_FZF_EXIT", "0")
+	// プレビューの色の強制を確かめるため、利用者の環境の色の設定を持ち込まない。
+	t.Setenv("CLICOLOR_FORCE", "")
+	t.Setenv("NO_COLOR", "")
 	writeFake(t, dir, "fzf", `printf '%s\n' "$@" > "$FAKE_DIR/fzf.args"
+printf '%s' "$CLICOLOR_FORCE" > "$FAKE_DIR/fzf.clicolor_force"
 cat > "$FAKE_DIR/fzf.stdin"
 if [ "$FAKE_FZF_EXIT" != 0 ]; then exit "$FAKE_FZF_EXIT"; fi
 printf '%s\n' "$FAKE_FZF_SELECT"`)
@@ -223,6 +227,23 @@ func TestOpenOutsideGitChoosesDrawerWithFzf(t *testing.T) {
 	}
 	if got := env.fzfArgs(t); !slices.Equal(got, wantArgs) {
 		t.Errorf("fzf args = %q, want %q", got, wantArgs)
+	}
+}
+
+func TestOpenOutsideGitForcesColorInPreviewUnlessNoColor(t *testing.T) {
+	// fzf はプレビューの出力を端末でなくパイプで受けるため、色を強制しないと hikidashi show が色を落とす。
+	for noColor, want := range map[string]string{"": "1", "1": ""} {
+		t.Run("NO_COLOR="+noColor, func(t *testing.T) {
+			env := newOpenEnv(t)
+			_, api1, _ := env.outsideGit(t)
+			t.Setenv("NO_COLOR", noColor)
+			t.Setenv("FAKE_FZF_SELECT", api1.Slug()+"\tapi       /src/api-11111111")
+
+			env.assertOpens(t, openCalls(api1, false, "switch-client"))
+			if got := testutil.ReadFile(t, filepath.Join(env.dir, "fzf.clicolor_force")); got != want {
+				t.Errorf("fzf CLICOLOR_FORCE = %q, want %q", got, want)
+			}
+		})
 	}
 }
 

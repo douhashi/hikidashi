@@ -270,7 +270,8 @@ hook・extract・`hikidashi notes`・`hikidashi add`・引数なしの `hikidash
 
 - 状態と放置時間は中断を反映した実効の値で出す（上記「中断の扱い」）。放置時間はその状態に入ってからの経過で、`5m` / `3h` / `2d` の形に切り捨てる
 - `hikidashi status` は `waiting` の件数だけを出す。0 件なら何も出さない。出力は件数と改行のみで、引数があれば exit 2、失敗は `!` を出して exit 1 とする
-- `hikidashi list`・`hikidashi show` の出力は、人が読めて skill から呼んだ Claude Code もそのまま読める素のテキストとする（下記「`hikidashi list`」「`hikidashi show`」）
+- `hikidashi list` は罫線付きの表、`hikidashi show` は角丸の枠で出し、状態を色で示す（下記「`hikidashi list`」「`hikidashi show`」）。表と枠は lipgloss で組む
+- 色は常に付け、書き出すときに colorprofile が落とす。stdout が端末でない（パイプ・skill から呼んだ Claude Code）か `NO_COLOR` があれば色の制御文字を出さず、罫線だけのテキストになる。`CLICOLOR_FORCE` があれば端末でなくても色を残す
 - tmux への組み込み（キーバインドと `status-right`）はユーザーが `tmux.conf` に書く。hikidashi は `tmux.conf` を書き換えない
 
 ### `hikidashi open`
@@ -280,6 +281,7 @@ hook・extract・`hikidashi notes`・`hikidashi add`・引数なしの `hikidash
 3. `$TMUX` が空でなければ `tmux switch-client -t =<name>` で今のクライアントを切り替え、空なら `tmux attach-session -t =<name>` で繋ぐ
 
 - fzf の一覧は 1 引き出し 1 行で、名前の順（同名は slug の順）に `<name>  <path>` を出す。各行の先頭に fzf には見せない slug を持たせ、プレビューは `hikidashi show {1}` でそれを受け取る
+- プレビューの出力は fzf へのパイプで端末でないため、fzf に `CLICOLOR_FORCE=1` を渡して色と枠を出させる。`NO_COLOR` があれば渡さない。JSON を読む `gh` には `CLICOLOR_FORCE=0` で色を付けさせない
 - Esc 等で何も選ばずに閉じたら何もせず exit 0 とする。登録済みの引き出しが無ければ fzf を出さずに `hikidashi add` を案内して exit 1 とする
 - Git 管理下で未登録なら、何も開かずに `hikidashi add` を案内して exit 1 とする
 - Git 管理外で一覧に落とすのは、tmux の `display-popup -d /` から全案件を選べるようにするため。案件のセッションはリポジトリのルートで作られ、その中からは一覧を出す手段が他に無い
@@ -289,19 +291,23 @@ hook・extract・`hikidashi notes`・`hikidashi add`・引数なしの `hikidash
 
 ### `hikidashi list`
 
-- 登録済みの全引き出しを名前の順（同名は slug の順）に 1 引き出し 1 行で出す: `<name>  <slug>  issues:<N>  running:<n>  waiting:<n>  idle:<n>`。名前と slug の列は幅を揃える
-- 件数の数え方と `issues:?` の扱いは下記「`hikidashi show`」と同じ。Issue は引き出しごとに並行して数える
+- 登録済みの全引き出しを名前の順（同名は slug の順）に、見出し `DRAWER`・`SLUG`・`ISSUES`・`RUNNING`・`WAITING`・`IDLE` を持つ角丸の罫線の表で 1 引き出し 1 行に出す。件数の列は右に寄せる
+- 件数は 1 件以上を状態ごとの色（Issue は紫、`running` は緑、`waiting` は橙、`idle` は灰）の太字で示し、0 件と `?` は目立たない色にする
+- 件数の数え方と `?` の扱いは下記「`hikidashi show`」と同じ。Issue は引き出しごとに並行して数える
 - 登録済みの引き出しが無ければ `no drawers registered (run hikidashi add in a repository)` を出して exit 0、引数があれば exit 2 とする
 
 ### `hikidashi show`
 
-- `hikidashi show <drawer>` は 1 つの引き出しの詳細を出す。見出し `<name>  <path>`、`slug:`、`issues:` の行、セッションごとの節（`── session <session_id> ──` に続けて `state:`（放置時間を括弧で添える）・`pane:`・次アクションの全項目）、最後に `notes.md` を出す。セッションは `waiting` → `idle` → `running`（人間が捌くべきものを上に）、同順位は放置の長い順に並べ、無ければ `(no sessions)` を出す
+- `hikidashi show <drawer>` は 1 つの引き出しの詳細を、引き出し・セッションごと・`notes.md` の角丸の枠に分けて出す。枠の上辺にタイトルを置き、幅は最長の行に合わせて折り返さない
+- 引き出しの枠（青）はタイトルが name で、`path`・`slug`・`issues`（`<N> open`、得られなければ `?`）の行を持つ
+- セッションの枠はタイトルが `session <session_id>` と状態の札（` WAITING 10m ` の形で放置時間を添える）で、枠と札の色が実効の状態を示す。`pane` と次アクションの全項目（`next.json` のフィールド名をラベルにする）の行を持つ
+- セッションは `waiting` → `idle` → `running`（人間が捌くべきものを上に）、同順位は放置の長い順に並べ、無ければ `(no sessions)` を出す。最後に `notes.md` の枠（暗い灰）に備忘録の本文を出す
 - 状態の件数・状態・放置時間は中断を反映した実効の値で、claude が終わったセッションは後始末して数えない
 - `<drawer>` は `hikidashi remove` と同じ規則で引き出しを決める（上記「`hikidashi remove`」）。名前が複数に当たれば候補の slug を stderr に出して exit 1 とする
 - 引数が無ければ作業ディレクトリの引き出しの詳細を、その slug を渡したときと同じに出す。Git 管理外なら `hikidashi list` を、未登録なら `hikidashi add` を stderr で案内して exit 1 とする
 - Open な Issue の件数は、リポジトリのルートで `gh repo view --json issues` を実行した `issues.totalCount`（Pull Request を含まない）とする。1 回 10 秒で打ち切る
 - 数えるリポジトリは `gh` の選択に従う（`gh repo set-default`、無ければリモート名 `upstream` → `github` → `origin` の順）。fork で `upstream` を持つと元のリポジトリの件数になるため、`gh repo set-default` で選び直す
-- 件数が得られない（GitHub のリモートが無い・`gh` が無い・認証切れ・打ち切り）ときは `issues:?` とし、0 件と区別する。理由を stderr に出したうえで exit 0 とする
+- 件数が得られない（GitHub のリモートが無い・`gh` が無い・認証切れ・打ち切り）ときは `?` とし、0 件と区別する。理由を stderr に出したうえで exit 0 とする
 - 存在しない引き出しは理由を stderr に出して exit 1、引数が 2 個以上なら exit 2 とする
 
 ## 未決事項

@@ -8,6 +8,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/charmbracelet/colorprofile"
+
 	"github.com/douhashi/hikidashi/internal/drawer"
 )
 
@@ -113,4 +115,10 @@ func currentDrawer(root, cwd string) (d drawer.Drawer, inGit bool, err error) {
 // report は stderr に書く。stderr に書けなければ失敗を伝える先が無いため、書き込みの失敗は捨てる。
 func report(stderr io.Writer, msg string) {
 	_, _ = io.WriteString(stderr, msg)
+}
+
+// colorWriter は stdout を、端末でない・NO_COLOR のときに色を落とす Writer で包む。
+// CLICOLOR_FORCE があれば端末でなくても色を残す（hikidashi open の fzf のプレビュー）。
+func colorWriter(stdout io.Writer) io.Writer {
+	return colorprofile.NewWriter(stdout, os.Environ())
 }
