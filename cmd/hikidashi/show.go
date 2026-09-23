@@ -81,9 +81,9 @@ func showKey(root string, args []string) (string, error) {
 	return d.Slug(), nil
 }
 
-// detail は key の引き出しの詳細を、幅 width（0 は制限なし）で stdout に書く。
+// detail は key の引き出しの詳細を、Issue の件数を gh で数えて幅 width（0 は制限なし）で stdout に書く。
 func detail(root, key string, width int, stdout, stderr io.Writer) error {
-	text, issues, err := show.Detail(root, key, time.Now(), width)
+	text, issues, err := show.Detail(root, key, show.OpenIssues, time.Now(), width)
 	if err != nil {
 		return err
 	}

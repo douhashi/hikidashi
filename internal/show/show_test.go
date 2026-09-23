@@ -326,3 +326,31 @@ func TestFrameKeepsWidthForLongTitleAndNotExtracted(t *testing.T) {
 	}
 	assertFrameWidth(t, got, 24)
 }
+
+func TestDetailShowsIssuesFromTheGivenCounter(t *testing.T) {
+	dataRoot := t.TempDir()
+	d := drawer.Drawer{Dir: filepath.Join(dataRoot, "drawers", "api-0123abcd"), Path: t.TempDir(), Name: "api"}
+	if err := d.Register(); err != nil {
+		t.Fatal(err)
+	}
+	for want, given := range map[string]Issues{"7 open": {Count: 7}, "?": {Err: errors.New("unknown")}} {
+		t.Run(want, func(t *testing.T) {
+			var asked []string
+			text, issues, err := Detail(dataRoot, "api", func(got drawer.Drawer) Issues {
+				asked = append(asked, got.Slug())
+				return given
+			}, time.Now(), 0)
+
+			if err != nil {
+				t.Fatalf("Detail: %v", err)
+			}
+			// 件数は引き出しごとに 1 回だけ問い合わせ、その値を枠の issues の行と戻り値に使う。
+			if !slices.Equal(asked, []string{d.Slug()}) || issues != given {
+				t.Errorf("asked %q and returned %+v, want %q and %+v", asked, issues, []string{d.Slug()}, given)
+			}
+			if row := "issues        " + want + " "; !strings.Contains(ansi.Strip(text), row) {
+				t.Errorf("Detail =\n%s\nwant the row %q", text, row)
+			}
+		})
+	}
+}

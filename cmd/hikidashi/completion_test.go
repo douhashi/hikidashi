@@ -59,8 +59,8 @@ func TestCompleteListsEveryCommandButNotItself(t *testing.T) {
 	if got != want.String() {
 		t.Errorf("stdout = %q, want %q", got, want.String())
 	}
-	if !strings.Contains(got, "completion\t") || strings.Contains(got, "__complete") {
-		t.Errorf("stdout = %q, want completion listed and __complete hidden", got)
+	if !strings.Contains(got, "completion\t") || strings.Contains(got, "__complete") || strings.Contains(got, "__preview") {
+		t.Errorf("stdout = %q, want completion listed and __complete and __preview hidden", got)
 	}
 }
 

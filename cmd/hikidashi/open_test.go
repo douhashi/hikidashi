@@ -217,17 +217,17 @@ func TestOpenOutsideGitChoosesDrawerWithFzf(t *testing.T) {
 	env.gh.OpenIssues(t, api1.Path, 3)
 	env.gh.OpenIssues(t, api2.Path, 5)
 	// 同名の引き出しは、選んだ行の slug で後の方を引く。
-	t.Setenv("FAKE_FZF_SELECT", api2.Slug()+"\t│ api      │      5 │")
+	t.Setenv("FAKE_FZF_SELECT", api2.Slug()+"\t5\t│ api      │      5 │")
 
 	// Issue の件数が得られない理由（frontend）は fzf の画面に上書きされるため出さず、表の ? だけで示す。
 	env.assertOpens(t, openCalls(api2, false, "switch-client"))
-	// 見出しの 3 行は slug を持たず、各行は「slug TAB list の表の行」。下の罫線は選べる行にしないため無い。
-	want := "\t╭──────────┬────────┬─────────┬─────────┬──────┬────────────────╮\n" +
-		"\t│ DRAWER   │ ISSUES │ RUNNING │ WAITING │ IDLE │ NOTES          │\n" +
-		"\t├──────────┼────────┼─────────┼─────────┼──────┼────────────────┤\n" +
-		api1.Slug() + "\t│ api      │      3 │       0 │       0 │    0 │                │\n" +
-		api2.Slug() + "\t│ api      │      5 │       0 │       1 │    0 │ 本番は触らない │\n" +
-		front.Slug() + "\t│ frontend │      ? │       0 │       0 │    0 │                │\n"
+	// 見出しの 3 行は slug と件数を持たず、各行は「slug TAB Issue の件数 TAB list の表の行」。下の罫線は選べる行にしないため無い。
+	want := "\t\t╭──────────┬────────┬─────────┬─────────┬──────┬────────────────╮\n" +
+		"\t\t│ DRAWER   │ ISSUES │ RUNNING │ WAITING │ IDLE │ NOTES          │\n" +
+		"\t\t├──────────┼────────┼─────────┼─────────┼──────┼────────────────┤\n" +
+		api1.Slug() + "\t3\t│ api      │      3 │       0 │       0 │    0 │                │\n" +
+		api2.Slug() + "\t5\t│ api      │      5 │       0 │       1 │    0 │ 本番は触らない │\n" +
+		front.Slug() + "\t?\t│ frontend │      ? │       0 │       0 │    0 │                │\n"
 	if got := ansi.Strip(env.fzfStdin(t)); got != want {
 		t.Errorf("fzf stdin =\n%s\nwant\n%s", got, want)
 	}
@@ -236,8 +236,8 @@ func TestOpenOutsideGitChoosesDrawerWithFzf(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantArgs := []string{
-		"--ansi", "--header-lines=3", "--delimiter=\t|│", "--with-nth=2..", "--nth=2", "--no-sort", "--layout=reverse",
-		"--with-shell=sh -c", "--preview=" + shellQuote(exe) + " show {1}", "--preview-window=down,50%",
+		"--ansi", "--header-lines=3", "--delimiter=\t|│", "--with-nth=3..", "--nth=2", "--no-sort", "--layout=reverse",
+		"--with-shell=sh -c", "--preview=" + shellQuote(exe) + " __preview {1} {2}", "--preview-window=down,50%",
 	}
 	if got := env.fzfArgs(t); !slices.Equal(got, wantArgs) {
 		t.Errorf("fzf args = %q, want %q", got, wantArgs)
@@ -282,6 +282,40 @@ func TestOpenOutsideGitFiltersByNameOnly(t *testing.T) {
 	}
 }
 
+func TestOpenOutsideGitPreviewReusesListedIssuesWithoutGh(t *testing.T) {
+	env := newOpenEnv(t)
+	front, api1, api2 := env.outsideGit(t)
+	env.gh.OpenIssues(t, api1.Path, 3)
+	env.gh.OpenIssues(t, api2.Path, 0)
+	t.Setenv("FAKE_FZF_EXIT", "130")
+	env.assertOpens(t, nil)
+	listed := len(env.gh.Calls(t))
+
+	// fzf のプレビューが {1} {2} で受け取る slug と件数で、カーソルを置いた各行のプレビューを描く。
+	want := map[string]string{api1.Slug(): "3 open", api2.Slug(): "0 open", front.Slug(): "?"}
+	for l := range strings.Lines(ansi.Strip(env.fzfStdin(t))) {
+		fields := strings.SplitN(l, "\t", 3)
+		if fields[0] == "" {
+			continue
+		}
+		slug, issues := fields[0], fields[1]
+		t.Run(slug, func(t *testing.T) {
+			code, stdout, stderr := invoke(commands, "", "__preview", slug, issues)
+
+			if code != 0 || stderr != "" {
+				t.Errorf("__preview %s %s = %d, stderr %q, want 0 and silent", slug, issues, code, stderr)
+			}
+			// プレビューの issues の行は、一覧の ISSUES 列と同じ値になる。
+			if row := "issues        " + want[slug] + " "; !strings.Contains(stdout, row) {
+				t.Errorf("__preview %s %s stdout =\n%s\nwant the row %q", slug, issues, stdout, row)
+			}
+		})
+	}
+	if got := len(env.gh.Calls(t)); got != listed {
+		t.Errorf("gh calls = %d after the previews, want %d (only while listing)", got, listed)
+	}
+}
+
 func TestListTableWidthFitsFzfList(t *testing.T) {
 	// プレビューは一覧の下に置くため、一覧は端末の全幅になる。表の幅は、そこから左のカーソルと印の 2 桁と右のスクロールバーの 1 桁を引いたもの。
 	for width, want := range map[int]int{0: 0, 80: 77, 100: 97, 200: 197} {
@@ -298,7 +332,7 @@ func TestOpenOutsideGitForcesColorInListAndPreviewUnlessNoColor(t *testing.T) {
 			env := newOpenEnv(t)
 			_, api1, _ := env.outsideGit(t)
 			t.Setenv("NO_COLOR", noColor)
-			t.Setenv("FAKE_FZF_SELECT", api1.Slug()+"\t│ api      │")
+			t.Setenv("FAKE_FZF_SELECT", api1.Slug()+"\t?\t│ api      │")
 
 			env.assertOpens(t, openCalls(api1, false, "switch-client"))
 			if got := testutil.ReadFile(t, filepath.Join(env.dir, "fzf.clicolor_force")); got != want {
@@ -330,7 +364,7 @@ func TestOpenOutsideGitFails(t *testing.T) {
 		stderr string
 	}{
 		"fzf fails":            {env: map[string]string{"FAKE_FZF_EXIT": "2"}, stderr: "hikidashi open: run fzf: exit status 2\n"},
-		"unexpected selection": {env: map[string]string{"FAKE_FZF_SELECT": "api-99999999\tx"}, stderr: "hikidashi open: unexpected selection \"api-99999999\\tx\"\n"},
+		"unexpected selection": {env: map[string]string{"FAKE_FZF_SELECT": "api-99999999\t0\tx"}, stderr: "hikidashi open: unexpected selection \"api-99999999\\t0\\tx\"\n"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			env := newOpenEnv(t)
