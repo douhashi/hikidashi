@@ -34,19 +34,31 @@ hikidashi 本体（`hikidashi` コマンド）と、Claude Code の hooks を `h
 - tmux（tmux の pane で動くセッションだけを記録する）
 - fzf（`hikidashi open` がプロジェクトの一覧に使う）
 - GitHub CLI（`gh`。`hikidashi list`・`hikidashi show` が Open な Issue を数えるのに使う。`gh auth login` 済みであること）
-- Go
 - Claude Code
 
 ### hikidashi と plugin を入れる
 
+[Releases](https://github.com/douhashi/hikidashi/releases) の最新版から、OS・arch に合うバイナリを `~/.local/bin` に入れる。
+
 ```sh
-go install github.com/douhashi/hikidashi/cmd/hikidashi@latest
+os=$(uname -s | tr '[:upper:]' '[:lower:]')   # linux / darwin
+arch=$(uname -m)
+case "$arch" in x86_64) arch=amd64 ;; aarch64) arch=arm64 ;; esac
+mkdir -p ~/.local/bin
+curl -fsSL -o ~/.local/bin/hikidashi \
+  "https://github.com/douhashi/hikidashi/releases/latest/download/hikidashi_${os}_${arch}"
+chmod +x ~/.local/bin/hikidashi
+```
+
+成果物を照合するときは、同じ場所の `checksums.txt` と `sha256sum`（macOS は `shasum -a 256`）の値を比べる。
+`~/.local/bin` は `PATH` に通しておく。`PATH` 上の hikidashi の版は `hikidashi version` で確かめられる。
+更新するときも同じ手順で上書きする。
+
+```sh
 claude plugin marketplace add douhashi/hikidashi
 claude plugin install hikidashi@hikidashi
 ```
 
-`go install` の出力先（`go env GOBIN`、未設定なら `$(go env GOPATH)/bin`）は `PATH` に通しておく。
-`PATH` 上の hikidashi の版は `hikidashi version` で確かめられる。
 plugin は起動時に読み込まれるため、動いている Claude Code のセッションは再起動する。
 ターンが終わるたびに `claude -p`（haiku）で次アクションを要約するため、その分の利用枠を使う。
 

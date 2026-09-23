@@ -19,9 +19,8 @@ allowed-tools:
 どの操作でも、最初に `command -v hikidashi` だけを単独で実行し、他のコマンドと繋げない。
 何も出なければ `hikidashi` は未導入なので、コマンドを実行せずに次を案内して終える。
 
-- 導入: `go install github.com/douhashi/hikidashi/cmd/hikidashi@latest`
-- `go install` の出力先（`go env GOBIN`、未設定なら `$(go env GOPATH)/bin`）を `PATH` に通す
-- 詳しくは https://github.com/douhashi/hikidashi の README を読む
+- 導入: https://github.com/douhashi/hikidashi の README の「hikidashi と plugin を入れる」に従い、Releases からバイナリを `~/.local/bin` に入れる
+- `~/.local/bin` を `PATH` に通す
 
 ## 登録する（add）
 

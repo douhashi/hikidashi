@@ -86,6 +86,7 @@ flowchart LR
 - 言語は Go とする。hook はツール呼び出しのたびに起動するため起動の速さが効き、単一バイナリで依存なく配れる
 - plugin はリポジトリ直下の marketplace（`.claude-plugin/marketplace.json`）から `hikidashi@hikidashi` として配る
 - plugin にはバイナリを同梱しない。プラットフォームごとのバイナリを plugin に積むと配布が重くなるため、`PATH` 上の `hikidashi` を呼ぶ
+- `hikidashi` は GitHub Releases に OS・arch 別の単一バイナリ（linux・darwin × amd64・arm64）として配る
 - 外部コマンドへの依存は `git`・`tmux`・`fzf`・`claude`・`gh` に限る。`gh` は `list`・`show` が Open な Issue を数えるのにだけ使う
 - 対象 OS は Linux と macOS。生存確認は Linux は `/proc/<pid>/comm`、macOS は sysctl `kern.proc.pid` のプロセス名で行う
 
