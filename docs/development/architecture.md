@@ -79,6 +79,7 @@ flowchart LR
 | `hikidashi list` | 人間・skill から呼んだ Claude Code が起動 | 全プロジェクトの概況を出す |
 | `hikidashi show` | 人間・skill から呼んだ Claude Code が起動 | 1 プロジェクト（省略時は作業ディレクトリのプロジェクト）の詳細を出す |
 | `hikidashi notes` | 人間が起動 | 現在の引き出しの `notes.md` を `$EDITOR` で開く |
+| `hikidashi version` | 人間が起動 | ビルド情報に埋まった版（タグ・疑似バージョン）を出す |
 | `hikidashi completion` | 人間がシェルの設定から起動 | zsh・bash の補完スクリプトを出す。候補はスクリプトが隠しコマンド `hikidashi __complete` で得る |
 | plugin | `plugin/hooks/hooks.json`・`plugin/skills/hikidashi/SKILL.md` | イベントを繋ぐ・頼まれたコマンドを実行するだけでロジックは持たない |
 

@@ -46,6 +46,7 @@ claude plugin install hikidashi@hikidashi
 ```
 
 `go install` の出力先（`go env GOBIN`、未設定なら `$(go env GOPATH)/bin`）は `PATH` に通しておく。
+`PATH` 上の hikidashi の版は `hikidashi version` で確かめられる。
 plugin は起動時に読み込まれるため、動いている Claude Code のセッションは再起動する。
 ターンが終わるたびに `claude -p`（haiku）で次アクションを要約するため、その分の利用枠を使う。
 
