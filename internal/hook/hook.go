@@ -172,7 +172,7 @@ func injectNotes(stdout io.Writer, d drawer.Drawer) error {
 
 // record は act をセッション状態に反映する。
 func record(d drawer.Drawer, act action, state session.State, in Input, getenv func(string) string, now time.Time) error {
-	// tmux 外のセッションは一覧から選んでも移動先が無いため、状態を記録しない。
+	// tmux 外のセッションは状態を記録しない。記録対象を広げるかは #41 で決める。
 	pane := getenv("TMUX_PANE")
 	if pane == "" {
 		return nil

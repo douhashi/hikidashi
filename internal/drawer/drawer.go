@@ -3,6 +3,7 @@
 package drawer
 
 import (
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -243,6 +244,13 @@ func List(dataRoot string) ([]Drawer, error) {
 		}
 	}
 	return drawers, nil
+}
+
+// SortByName は drawers を名前（Name）の順、同名は slug の順に並べ替える。一覧に出す順である。
+func SortByName(drawers []Drawer) {
+	slices.SortFunc(drawers, func(a, b Drawer) int {
+		return cmp.Or(cmp.Compare(a.Name, b.Name), cmp.Compare(a.Slug(), b.Slug()))
+	})
 }
 
 // drawersDir は dataRoot 配下の、引き出しのディレクトリを並べる場所を返す。

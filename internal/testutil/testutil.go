@@ -254,25 +254,26 @@ func (f *FakeClaude) Calls(t *testing.T) []ClaudeCall {
 }
 
 // FakeTmux は PATH の先頭に置いた偽の tmux コマンド。外部境界である tmux をテストで模す唯一の置き場で、
-// 呼ばれるたびに引数を記録する。既存のセッションを覚え、has-session はその有無で、new-session はその追加で応える。
+// 呼ばれるたびに引数を記録する。既存のセッションを覚え、has-session はその有無で、new-session はその追加で応え、
+// switch-client・attach-session は無いセッションを指されたら実物と同じく失敗する。
 type FakeTmux struct {
 	dir string
 }
 
 // fakeTmuxScript は偽の tmux の本体。%s はデータのディレクトリ（単一引用符で囲める値）。
-// fail があれば、どの呼び出しにも stderr を出して fail の終了コードで終わる。
-// 引数の位置は internal/tmux が組み立てる形（has-session -t =<name> / new-session -d -s <name> -c <dir>）に合わせる。
+// fail-<サブコマンド> があれば、そのサブコマンドの呼び出しは stderr-<サブコマンド> を出して fail-<サブコマンド> の終了コードで終わる。
+// 引数の位置は internal/tmux が組み立てる形（<サブコマンド> -t =<name> / new-session -d -s <name> -c <dir>）に合わせる。
 const fakeTmuxScript = `#!/bin/sh
 d='%s'
 n=1
 while ! mkdir "$d/call$n" 2>/dev/null; do n=$((n + 1)); done
 printf '%%s\0' "$@" >"$d/call$n/args"
-if [ -e "$d/fail" ]; then
-	cat "$d/stderr" >&2
-	exit "$(cat "$d/fail")"
+if [ -e "$d/fail-$1" ]; then
+	cat "$d/stderr-$1" >&2
+	exit "$(cat "$d/fail-$1")"
 fi
 case "$1" in
-has-session)
+has-session | switch-client | attach-session)
 	[ -e "$d/sessions/${3#=}" ] && exit 0
 	echo "can't find session: ${3#=}" >&2
 	exit 1
@@ -301,11 +302,11 @@ func (f *FakeTmux) AddSession(t *testing.T, name string) {
 	WriteFile(t, filepath.Join(f.dir, "sessions", name), "")
 }
 
-// Fail は以降の呼び出しを、stderr に msg を出して code で終わらせる。
-func (f *FakeTmux) Fail(t *testing.T, msg string, code int) {
+// Fail は以降の subcommand の呼び出しを、stderr に msg を出して code で終わらせる。
+func (f *FakeTmux) Fail(t *testing.T, subcommand, msg string, code int) {
 	t.Helper()
-	WriteFile(t, filepath.Join(f.dir, "stderr"), msg+"\n")
-	WriteFile(t, filepath.Join(f.dir, "fail"), strconv.Itoa(code))
+	WriteFile(t, filepath.Join(f.dir, "stderr-"+subcommand), msg+"\n")
+	WriteFile(t, filepath.Join(f.dir, "fail-"+subcommand), strconv.Itoa(code))
 }
 
 // Calls はこれまでの呼び出しの引数を呼ばれた順に返す。

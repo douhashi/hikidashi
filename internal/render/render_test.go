@@ -32,18 +32,6 @@ func TestOneLineReplacesControlCharacters(t *testing.T) {
 	}
 }
 
-func TestNextActionPrefersHumanNextThenSummary(t *testing.T) {
-	for want, n := range map[string]session.Next{
-		"差分を確認する": {Summary: "直している", HumanNext: "差分を確認する"},
-		"直している":   {Summary: "直している"},
-		None:      {},
-	} {
-		if got := NextAction(n); got != want {
-			t.Errorf("NextAction(%+v) = %q, want %q", n, got, want)
-		}
-	}
-}
-
 func TestWriteNextWritesEveryFieldOrNotExtracted(t *testing.T) {
 	generated := time.Date(2026, 9, 23, 10, 0, 0, 0, time.UTC)
 	for name, tc := range map[string]struct {

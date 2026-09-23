@@ -3,10 +3,8 @@
 package show
 
 import (
-	"cmp"
 	"context"
 	"fmt"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -48,9 +46,7 @@ func Summaries(dataRoot string) ([]Summary, error) {
 	if err != nil {
 		return nil, err
 	}
-	slices.SortFunc(drawers, func(a, b drawer.Drawer) int {
-		return cmp.Or(cmp.Compare(a.Name, b.Name), cmp.Compare(a.Slug(), b.Slug()))
-	})
+	drawer.SortByName(drawers)
 
 	issues := make([]Issues, len(drawers))
 	var wg sync.WaitGroup

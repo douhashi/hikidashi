@@ -1,4 +1,4 @@
-// Package render は読み手（open / show）がセッションと引き出しを文字にする共通の書式を持つ。
+// Package render は読み手（open / list / show）がセッションと引き出しを文字にする共通の書式を持つ。
 // 書式は docs/development/architecture.md の「UI」を参照。
 package render
 
@@ -34,17 +34,6 @@ func OneLine(s string) string {
 		}
 		return r
 	}, s)
-}
-
-// NextAction は一覧に出す次アクション。人間の次アクション、無ければ要約、どちらも無ければ None とする。
-func NextAction(n session.Next) string {
-	switch {
-	case n.HumanNext != "":
-		return n.HumanNext
-	case n.Summary != "":
-		return n.Summary
-	}
-	return None
 }
 
 // WriteNext は次アクションの全項目を、sessions/<session_id>.next.json のフィールド名で書く。

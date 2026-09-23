@@ -1,6 +1,6 @@
-// Package scan は引き出しのセッションを集め、読み手（open / status / show）が表示する形に整える。
+// Package scan は引き出しのセッションを集め、読み手（status / list / show）が表示する形に整える。
 // 終わったセッションの後始末と中断の扱いは docs/development/architecture.md の「セッションの後始末」
-// 「中断の扱い」、並び順は「UI」を参照。
+// 「中断の扱い」、並び順は「hikidashi show」を参照。
 package scan
 
 import (

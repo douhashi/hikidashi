@@ -7,6 +7,8 @@ import (
 	"io"
 	"os"
 	"strings"
+
+	"github.com/douhashi/hikidashi/internal/drawer"
 )
 
 // command は 1 つのサブコマンド。run はサブコマンド名より後ろの引数と標準入出力を受け取り、終了コードを返す。
@@ -23,7 +25,7 @@ var commands = []command{
 	{name: "hook", summary: "record the session state and inject notes from a Claude Code hook input", run: runHook},
 	{name: "list", summary: "print an overview of all drawers", run: runList},
 	{name: "notes", summary: "open the notes of the current drawer in $EDITOR", run: runNotes},
-	{name: "open", summary: "choose a session with fzf and switch to its tmux pane", run: runOpen},
+	{name: "open", summary: "open the tmux session of a drawer (the current one if omitted, chosen with fzf outside Git)", run: runOpen},
 	{name: "remove", summary: "unregister a drawer (the current one if omitted), keeping its non-empty notes", run: runRemove},
 	{name: "show", summary: "print the details of a drawer (the current one if omitted)", run: runShow},
 	{name: "status", summary: "print the number of sessions waiting for input, for the tmux status bar", run: runStatus},
@@ -83,6 +85,29 @@ func usage(cmds []command) string {
 // notRegistered は reason（登録済みの引き出しが見つからない理由）に、hikidashi add で登録できることを添えたエラーを返す。
 func notRegistered(reason string) error {
 	return fmt.Errorf("%s; run \"hikidashi add\" in the repository to register it", reason)
+}
+
+// findDrawer は登録済みの引き出しから、name を slug または名前に持つものを返す。
+// 見つからなければ hikidashi add を案内するエラー、名前が複数に当たれば候補の slug を並べたエラーを返す。
+func findDrawer(root, name string) (drawer.Drawer, error) {
+	d, ok, err := drawer.Find(root, name)
+	if err == nil && !ok {
+		err = notRegistered(fmt.Sprintf("no registered drawer %q", name))
+	}
+	return d, err
+}
+
+// currentDrawer は cwd のリポジトリの登録済みの引き出しを返す。cwd が Git 管理外なら inGit=false を返し、
+// Git 管理下で未登録なら hikidashi add を案内するエラーを返す。
+func currentDrawer(root, cwd string) (d drawer.Drawer, inGit bool, err error) {
+	if _, inGit, err = drawer.Resolve(root, cwd); err != nil || !inGit {
+		return drawer.Drawer{}, inGit, err
+	}
+	d, ok, err := drawer.Lookup(root, cwd)
+	if err == nil && !ok {
+		err = notRegistered(cwd + " is not in a registered drawer")
+	}
+	return d, true, err
 }
 
 // report は stderr に書く。stderr に書けなければ失敗を伝える先が無いため、書き込みの失敗は捨てる。
