@@ -14,22 +14,25 @@ import (
 )
 
 // command は 1 つのサブコマンド。run はサブコマンド名より後ろの引数と標準入出力を受け取り、終了コードを返す。
+// complete は 1 個目の引数の補完の候補を返す。引数を取らないサブコマンドでは nil とする。
 type command struct {
-	name    string
-	summary string
-	run     func(args []string, stdin io.Reader, stdout, stderr io.Writer) int
+	name     string
+	summary  string
+	run      func(args []string, stdin io.Reader, stdout, stderr io.Writer) int
+	complete func() ([]candidate, error)
 }
 
 // commands は hikidashi が持つサブコマンドの表。
 var commands = []command{
 	{name: "add", summary: "register the current repository as a drawer and prepare its tmux session", run: runAdd},
+	{name: "completion", summary: "print the shell completion script (zsh or bash)", run: runCompletion, complete: shellCandidates},
 	{name: "extract", summary: "extract the next action of a session from its transcript (Stop hook)", run: runExtract},
 	{name: "hook", summary: "record the session state and inject notes from a Claude Code hook input", run: runHook},
 	{name: "list", summary: "print an overview of all drawers", run: runList},
 	{name: "notes", summary: "open the notes of the current drawer in $EDITOR", run: runNotes},
-	{name: "open", summary: "open the tmux session of a drawer (the current one if omitted, chosen with fzf outside Git)", run: runOpen},
-	{name: "remove", summary: "unregister a drawer (the current one if omitted), keeping its non-empty notes", run: runRemove},
-	{name: "show", summary: "print the details of a drawer (the current one if omitted)", run: runShow},
+	{name: "open", summary: "open the tmux session of a drawer (the current one if omitted, chosen with fzf outside Git)", run: runOpen, complete: drawerCandidates},
+	{name: "remove", summary: "unregister a drawer (the current one if omitted), keeping its non-empty notes", run: runRemove, complete: drawerCandidates},
+	{name: "show", summary: "print the details of a drawer (the current one if omitted)", run: runShow, complete: drawerCandidates},
 	{name: "status", summary: "print the number of sessions waiting for input, for the tmux status bar", run: runStatus},
 }
 
@@ -53,6 +56,9 @@ func run(cmds []command, args []string, stdin io.Reader, stdout, stderr io.Write
 			return 1
 		}
 		return 0
+	case "__complete":
+		// commands を参照するため表には載せず、使い方にも出さない。
+		return runComplete(cmds, args[1:], stdout, stderr)
 	}
 
 	for _, c := range cmds {

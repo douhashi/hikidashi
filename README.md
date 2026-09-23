@@ -66,6 +66,20 @@ set -g status-right '#(hikidashi status) %H:%M'
 `hikidashi` と `fzf` は tmux サーバーの `PATH` から見える場所に置く。
 ステータスバーの表示は `status-interval`（既定 15 秒）ごとに更新される。
 
+### シェルの補完を有効にする
+
+サブコマンド名と、`open`・`show`・`remove` に渡す引き出しの名前を Tab で補完できる。
+
+```sh
+# zsh: ~/.zshrc の compinit の後に書く
+source <(hikidashi completion zsh)
+
+# bash: ~/.bashrc に書く
+source <(hikidashi completion bash)
+```
+
+同名のプロジェクトが複数あるときは、名前の代わりに slug が候補に出る。
+
 ## 使い方
 
 ### 流れ
