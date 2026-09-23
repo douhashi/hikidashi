@@ -34,6 +34,7 @@ var commands = []command{
 	{name: "remove", summary: "unregister a drawer (the current one if omitted), keeping its non-empty notes", run: runRemove, complete: drawerCandidates},
 	{name: "show", summary: "print the details of a drawer (the current one if omitted)", run: runShow, complete: drawerCandidates},
 	{name: "status", summary: "print the number of sessions waiting for input, for the tmux status bar", run: runStatus},
+	{name: "version", summary: "print the version of hikidashi", run: runVersion},
 }
 
 func main() {
