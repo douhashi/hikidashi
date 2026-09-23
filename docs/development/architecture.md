@@ -57,20 +57,23 @@ flowchart LR
   SH -- 読む --> A
   SH -- 読む --> N
   SH -- gh repo view --> GH[GitHub]
+  SK[skill] --> AD
+  SK --> SH
+  SK --> RM
 ```
 
 | 要素 | 実体 | 役割 |
 | --- | --- | --- |
 | `hikidashi` | Go の単一バイナリ | 以下のサブコマンドをすべて持つ。`PATH` 上に置く |
-| `hikidashi add` | 人間が起動 | 作業ディレクトリの案件を引き出しとして登録し、tmux セッションを用意する |
-| `hikidashi remove` | 人間が起動 | 案件の登録を取り消す。空でない備忘録は残す |
+| `hikidashi add` | 人間・skill から呼んだ Claude Code が起動 | 作業ディレクトリの案件を引き出しとして登録し、tmux セッションを用意する |
+| `hikidashi remove` | 人間・skill から呼んだ Claude Code が起動 | 案件の登録を取り消す。空でない備忘録は残す |
 | `hikidashi hook` | hook から起動 | 登録済みの引き出しへの状態の記録、備忘録の注入 |
 | `hikidashi extract` | `Stop` の async hook から起動 | transcript の末尾から次アクションを抽出する |
 | `hikidashi open` | tmux の `display-popup` から起動 | fzf で一覧を出し、選んだ pane へ移動する |
 | `hikidashi status` | tmux の `status-right` から起動 | 入力待ちの件数を出す |
 | `hikidashi show` | 人間・skill から呼んだ Claude Code が起動 | 全案件の概況、または 1 案件の詳細を出す |
 | `hikidashi notes` | 人間が起動 | 現在の引き出しの `notes.md` を `$EDITOR` で開く |
-| plugin | `plugin/hooks/hooks.json` | 各イベントを `hikidashi` に繋ぐだけ。ロジックは持たない |
+| plugin | `plugin/hooks/hooks.json`・`plugin/skills/hikidashi/SKILL.md` | イベントを繋ぐ・頼まれたコマンドを実行するだけでロジックは持たない |
 
 - 言語は Go とする。hook はツール呼び出しのたびに起動するため起動の速さが効き、単一バイナリで依存なく配れる
 - plugin はリポジトリ直下の marketplace（`.claude-plugin/marketplace.json`）から `hikidashi@hikidashi` として配る

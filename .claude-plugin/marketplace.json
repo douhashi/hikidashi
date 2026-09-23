@@ -8,7 +8,7 @@
     {
       "name": "hikidashi",
       "source": "./plugin",
-      "description": "Record the state of each Claude Code session into hikidashi"
+      "description": "Record the state of each Claude Code session into hikidashi, and register projects or check their status through a skill"
     }
   ]
 }
