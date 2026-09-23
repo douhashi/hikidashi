@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/ansi"
 
@@ -103,7 +104,7 @@ func TestSessionFrameShowsStateByBorderAndBadge(t *testing.T) {
 		Since:   now.Add(-10 * time.Minute),
 	}
 
-	got := sessionFrame(e, now)
+	got := sessionFrame(e, now, 0)
 
 	want := "╭─ session w1  WAITING 10m  ──────╮\n" +
 		"│ pane          %1                │\n" +
@@ -142,7 +143,7 @@ func TestNextRowsShowEveryFieldOrNotExtracted(t *testing.T) {
 		"not extracted": {want: []string{"(next action not extracted yet)"}},
 	} {
 		t.Run(name, func(t *testing.T) {
-			rows := nextRows(tc.next, tc.ok)
+			rows := nextRows(tc.next, tc.ok, 0)
 
 			got := make([]string, len(rows))
 			for i, r := range rows {
@@ -153,4 +154,68 @@ func TestNextRowsShowEveryFieldOrNotExtracted(t *testing.T) {
 			}
 		})
 	}
+}
+
+// assertFrameWidth は、色を落とした枠 got の全行が width 桁で、右端が枠の線であることを確かめる。
+func assertFrameWidth(t *testing.T, got string, width int) {
+	t.Helper()
+	for i, l := range strings.Split(ansi.Strip(got), "\n") {
+		if w := lipgloss.Width(l); w != width {
+			t.Errorf("line %d %q is %d wide, want %d", i, l, w, width)
+		}
+		if !strings.HasSuffix(l, "│") && !strings.HasSuffix(l, "╮") && !strings.HasSuffix(l, "╯") {
+			t.Errorf("line %d %q does not end with the border", i, l)
+		}
+	}
+}
+
+func TestSessionFrameFillsWidthAndWrapsValues(t *testing.T) {
+	now := time.Date(2026, 9, 23, 10, 0, 0, 0, time.UTC)
+	e := scan.Entry{
+		Session: session.Session{SessionID: "w1", TmuxPane: "%1", State: session.Waiting},
+		Since:   now.Add(-10 * time.Minute),
+		Next:    session.Next{Summary: "fix the flaky test in the api client", Blockers: []string{"CI が落ちていて権限の承認も必要"}},
+		HasNext: true,
+	}
+
+	got := sessionFrame(e, now, 40)
+
+	// 値の列は 40 - 4（左右の線と余白）- 14（ラベルの列）= 22 桁で、2 行目以降はラベルの列を空けて続ける。
+	// 空白の無い全角の並びは語の途中で切り、全角を含む行も右の線が揃う。
+	want := "╭─ session w1  WAITING 10m  ───────────╮\n" +
+		"│ pane          %1                     │\n" +
+		"│ summary       fix the flaky test in  │\n" +
+		"│               the api client         │\n" +
+		"│ human_next    -                      │\n" +
+		"│ claude_next   -                      │\n" +
+		"│ blockers      - CI                   │\n" +
+		"│               が落ちていて権限の承認 │\n" +
+		"│               も必要                 │\n" +
+		"│ generated_at  -                      │\n" +
+		"╰──────────────────────────────────────╯"
+	if plain := ansi.Strip(got); plain != want {
+		t.Errorf("sessionFrame =\n%s\nwant\n%s", plain, want)
+	}
+	assertFrameWidth(t, got, 40)
+}
+
+func TestFrameKeepsWidthForLongTitleAndNotExtracted(t *testing.T) {
+	now := time.Date(2026, 9, 23, 10, 0, 0, 0, time.UTC)
+	e := scan.Entry{
+		Session: session.Session{SessionID: "0123456789abcdef-0123456789abcdef", TmuxPane: "%1", State: session.Idle},
+		Since:   now.Add(-10 * time.Minute),
+	}
+
+	got := sessionFrame(e, now, 24)
+
+	// タイトル（札まで含む）は 24 - 6 桁に切り詰め、枠内の案内行も中身の幅 20 桁で折り返す。
+	want := "╭─ session 012345678… ─╮\n" +
+		"│ pane          %1     │\n" +
+		"│ (next action not     │\n" +
+		"│ extracted yet)       │\n" +
+		"╰──────────────────────╯"
+	if plain := ansi.Strip(got); plain != want {
+		t.Errorf("sessionFrame =\n%s\nwant\n%s", plain, want)
+	}
+	assertFrameWidth(t, got, 24)
 }

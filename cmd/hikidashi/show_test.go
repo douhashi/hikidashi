@@ -7,6 +7,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
+
+	"charm.land/lipgloss/v2"
 
 	"github.com/douhashi/hikidashi/internal/drawer"
 	"github.com/douhashi/hikidashi/internal/session"
@@ -283,5 +286,49 @@ func TestShowRejectsExtraArguments(t *testing.T) {
 
 	if code != 2 || stdout != "" || stderr != "Usage: hikidashi show [<drawer>]\n" {
 		t.Errorf("show a b = %d, stdout %q, stderr %q, want 2 and usage", code, stdout, stderr)
+	}
+}
+
+func TestShowFillsFzfPreviewColumns(t *testing.T) {
+	env := newShowEnv(t)
+	api := env.drawer(t, "api", "api-0123abcd")
+	env.session(t, api, "w1", session.Waiting, time.Now())
+	testutil.WriteFile(t, filepath.Join(api.Dir, "sessions", "w1.next.json"),
+		`{"summary":"`+strings.Repeat("API のテストを直している ", 4)+`"}`)
+	testutil.WriteFile(t, api.NotesPath(), strings.Repeat("本番は触らない。", 10)+"\n")
+	env.gh.OpenIssues(t, api.Path, 1)
+	t.Setenv("FZF_PREVIEW_COLUMNS", "50")
+
+	code, stdout, stderr := invoke(commands, "", "show", "api")
+
+	if code != 0 || stderr != "" {
+		t.Errorf("show api = %d, stderr %q, want 0 and silent", code, stderr)
+	}
+	// 引き出し・セッション・notes.md のどの枠も、長い値を折り返して 50 桁に収まる。
+	for i, l := range strings.Split(strings.TrimSuffix(stdout, "\n"), "\n") {
+		last, _ := utf8.DecodeLastRuneInString(l)
+		if w := lipgloss.Width(l); w != 50 || !strings.ContainsRune("│╮╯", last) {
+			t.Errorf("line %d %q is %d wide ending with %q, want 50 wide ending with the border", i, l, w, last)
+		}
+	}
+}
+
+func TestShowIgnoresUnusableFzfPreviewColumns(t *testing.T) {
+	env := newShowEnv(t)
+	api := env.drawer(t, "api", "api-0123abcd")
+	env.gh.OpenIssues(t, api.Path, 1)
+	_, want, _ := invoke(commands, "", "show", "api")
+
+	// 正の整数でない、または値の列が 1 桁も取れない（18 - 4 - 14 = 0）なら、パイプに出したときと同じく幅の制限なしで出す。
+	for _, columns := range []string{"0", "-1", "wide", "18"} {
+		t.Run(columns, func(t *testing.T) {
+			t.Setenv("FZF_PREVIEW_COLUMNS", columns)
+
+			code, stdout, _ := invoke(commands, "", "show", "api")
+
+			if code != 0 || stdout != want {
+				t.Errorf("show api = %d, stdout =\n%s\nwant\n%s", code, stdout, want)
+			}
+		})
 	}
 }

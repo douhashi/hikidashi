@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"time"
+
+	"github.com/charmbracelet/x/term"
 
 	"github.com/douhashi/hikidashi/internal/drawer"
 	"github.com/douhashi/hikidashi/internal/show"
@@ -39,7 +42,24 @@ func showDrawer(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	return detail(root, key, colorWriter(stdout), stderr)
+	return detail(root, key, outputWidth(stdout), colorWriter(stdout), stderr)
+}
+
+// outputWidth は stdout の幅を返す。fzf のプレビュー（FZF_PREVIEW_COLUMNS が正の整数）ならその桁数、
+// 端末ならその幅、どちらでもなければ 0（制限なし）を返す。
+func outputWidth(stdout io.Writer) int {
+	if columns, err := strconv.Atoi(os.Getenv("FZF_PREVIEW_COLUMNS")); err == nil && columns > 0 {
+		return columns
+	}
+	f, ok := stdout.(*os.File)
+	if !ok || !term.IsTerminal(f.Fd()) {
+		return 0
+	}
+	width, _, err := term.GetSize(f.Fd())
+	if err != nil {
+		return 0
+	}
+	return width
 }
 
 // showKey は詳細を出す引き出しの鍵を返す。引数があればそれを、無ければ作業ディレクトリの引き出しの slug を返す。
@@ -61,9 +81,9 @@ func showKey(root string, args []string) (string, error) {
 	return d.Slug(), nil
 }
 
-// detail は key の引き出しの詳細を stdout に書く。
-func detail(root, key string, stdout, stderr io.Writer) error {
-	text, issues, err := show.Detail(root, key, time.Now())
+// detail は key の引き出しの詳細を、幅 width（0 は制限なし）で stdout に書く。
+func detail(root, key string, width int, stdout, stderr io.Writer) error {
+	text, issues, err := show.Detail(root, key, time.Now(), width)
 	if err != nil {
 		return err
 	}
