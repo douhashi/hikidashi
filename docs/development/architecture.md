@@ -52,6 +52,9 @@ flowchart LR
   O[hikidashi open] -- 読む --> D
   O -- new-session / switch-client / attach-session --> TS
   O -- fzf のプレビュー --> SH
+  O -- 読む --> S
+  N -- 読む --> O
+  O -- gh repo view --> GH
   ST[hikidashi status] -- 読む --> S
   LS[hikidashi list] -- 読む --> S
   LS -- gh repo view --> GH
@@ -88,7 +91,7 @@ flowchart LR
 - plugin はリポジトリ直下の marketplace（`.claude-plugin/marketplace.json`）から `hikidashi@hikidashi` として配る
 - plugin にはバイナリを同梱しない。プラットフォームごとのバイナリを plugin に積むと配布が重くなるため、`PATH` 上の `hikidashi` を呼ぶ
 - `hikidashi` は GitHub Releases に OS・arch 別の単一バイナリ（linux・darwin × amd64・arm64）として配る
-- 外部コマンドへの依存は `git`・`tmux`・`fzf`・`claude`・`gh` に限る。`gh` は `list`・`show` が Open な Issue を数えるのにだけ使う
+- 外部コマンドへの依存は `git`・`tmux`・`fzf`・`claude`・`gh` に限る。`gh` は `list`・`show`・`open` が Open な Issue を数えるのにだけ使う
 - 対象 OS は Linux と macOS。生存確認は Linux は `/proc/<pid>/comm`、macOS は sysctl `kern.proc.pid` のプロセス名で行う
 
 ## 状態モデル
@@ -300,8 +303,10 @@ hook・extract・`hikidashi notes`・`hikidashi add`・引数なしの `hikidash
 2. 引き出しの tmux セッションが無ければ、`hikidashi add` と同じ規則（`has-session` → `new-session`）で作る
 3. `$TMUX` が空でなければ `tmux switch-client -t =<name>` で今のクライアントを切り替え、空なら `tmux attach-session -t =<name>` で繋ぐ
 
-- fzf の一覧は 1 引き出し 1 行で、名前の順（同名は slug の順）に `<name>  <path>` を出す。`<path>` はホーム配下ならホームを `~` に縮める（プロジェクトを見分ける末尾が fzf の幅で切られないため）。`hikidashi show` の `path` は絶対パスのまま。各行の先頭に fzf には見せない slug を持たせ、プレビューは `hikidashi show {1}` でそれを受け取る
-- プレビューの出力は fzf へのパイプで端末でないため、fzf に `CLICOLOR_FORCE=1` を渡して色と枠を出させる。`NO_COLOR` があれば渡さない。JSON を読む `gh` には `CLICOLOR_FORCE=0` で色を付けさせない
+- fzf の一覧の各行は `hikidashi list` の表の行（列・色・名前の順を共有する）で、見出しの 3 行は選べない行として一覧の上に固定し、下の罫線は出さない。各行の先頭に fzf には見せない slug を持たせ、プレビューは `hikidashi show {1}` でそれを受け取る
+- 絞り込みは表の名前のセルにだけ当て（`--nth`）、件数や NOTES の文字では当たらない。Issue の件数が得られない理由は fzf の画面に上書きされるため出さず、表の `?` だけで示す
+- プレビューは端末の幅によらず常に一覧の下に全幅で置く。表の NOTES は一覧の幅（fzf のカーソルとスクロールバーの 3 桁を除く）に収まるよう切り詰める
+- 一覧とプレビューの出力は fzf へのパイプで端末でないため、`CLICOLOR_FORCE=1` で一覧の表に色を付け、fzf にも渡してプレビューに色と枠を出させる。`NO_COLOR` があればどちらも色を付けない。JSON を読む `gh` には `CLICOLOR_FORCE=0` で色を付けさせない
 - Esc 等で何も選ばずに閉じたら何もせず exit 0 とする。登録済みの引き出しが無ければ fzf を出さずに `hikidashi add` を案内して exit 1 とする
 - Git 管理下で未登録なら、何も開かずに `hikidashi add` を案内して exit 1 とする
 - Git 管理外で一覧に落とすのは、tmux の `display-popup -d /` から全プロジェクトを選べるようにするため。プロジェクトのセッションはリポジトリのルートで作られ、その中からは一覧を出す手段が他に無い

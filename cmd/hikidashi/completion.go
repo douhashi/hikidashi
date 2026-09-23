@@ -142,3 +142,18 @@ func drawerCandidates() ([]candidate, error) {
 	}
 	return cands, nil
 }
+
+// tildePath は home 配下の path の home を ~ に縮める。プロジェクトを見分ける末尾が補完の候補の幅で切られにくくするため。
+// home の外（home と前方一致するだけの兄弟を含む）や、home が / のときはそのまま返す。
+func tildePath(path, home string) string {
+	home = strings.TrimSuffix(home, "/")
+	switch {
+	case home == "":
+		return path
+	case path == home:
+		return "~"
+	case strings.HasPrefix(path, home+"/"):
+		return "~" + strings.TrimPrefix(path, home)
+	}
+	return path
+}

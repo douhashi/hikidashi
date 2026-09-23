@@ -135,6 +135,13 @@ func Table(summaries []Summary, width int) string {
 	return summaryTable(summaries, notes)
 }
 
+// TableLines は Table と同じ表を、見出しの 3 行（上の罫線・見出し・区切りの罫線）と、summaries の順の 1 引き出し 1 行に分けて返す。
+// 下の罫線は返さない。hikidashi open の fzf が見出しを一覧の上に固定し、引き出しの行だけを選ばせるため。
+func TableLines(summaries []Summary, width int) (header, rows []string) {
+	lines := strings.Split(Table(summaries, width), "\n")
+	return lines[:3], lines[3 : 3+len(summaries)]
+}
+
 // summaryTable は summaries の各行の備忘録の列を notes にした表を返す。
 func summaryTable(summaries []Summary, notes []string) string {
 	t := table.New().Border(lipgloss.RoundedBorder()).BorderStyle(lipgloss.NewStyle().Foreground(lineColor)).

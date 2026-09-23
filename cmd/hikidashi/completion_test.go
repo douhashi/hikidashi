@@ -204,3 +204,20 @@ func TestCompletionRejectsOtherArguments(t *testing.T) {
 		}
 	}
 }
+
+func TestTildePath(t *testing.T) {
+	for name, tc := range map[string]struct{ path, home, want string }{
+		"under home":             {"/home/a/x", "/home/a", "~/x"},
+		"home itself":            {"/home/a", "/home/a", "~"},
+		"outside home":           {"/src/x", "/home/a", "/src/x"},
+		"sibling sharing prefix": {"/home/ab", "/home/a", "/home/ab"},
+		"home with trailing /":   {"/home/a/x", "/home/a/", "~/x"},
+		"home is root":           {"/x", "/", "/x"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := tildePath(tc.path, tc.home); got != tc.want {
+				t.Errorf("tildePath(%q, %q) = %q, want %q", tc.path, tc.home, got, tc.want)
+			}
+		})
+	}
+}
