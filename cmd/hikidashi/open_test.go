@@ -235,10 +235,9 @@ func TestOpenOutsideGitChoosesDrawerWithFzf(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 出力先が端末でない（幅が分からない）ため、プレビューは右に置く。
 	wantArgs := []string{
 		"--ansi", "--header-lines=3", "--delimiter=\t|│", "--with-nth=2..", "--nth=2", "--no-sort", "--layout=reverse",
-		"--with-shell=sh -c", "--preview=" + shellQuote(exe) + " show {1}", "--preview-window=right,50%",
+		"--with-shell=sh -c", "--preview=" + shellQuote(exe) + " show {1}", "--preview-window=down,50%",
 	}
 	if got := env.fzfArgs(t); !slices.Equal(got, wantArgs) {
 		t.Errorf("fzf args = %q, want %q", got, wantArgs)
@@ -283,22 +282,11 @@ func TestOpenOutsideGitFiltersByNameOnly(t *testing.T) {
 	}
 }
 
-func TestPreviewLayoutPutsPreviewBelowOnWideTerminals(t *testing.T) {
-	// 表の幅は、fzf の一覧の幅から左のカーソルと印の 2 桁と右のスクロールバーの 1 桁を引いたもの。
-	// 右のプレビューは端末の幅の 50%（切り捨て）を取り、一覧は残りになる。
-	for width, want := range map[int]struct {
-		window     string
-		tableWidth int
-	}{
-		0:   {"right,50%", 0},
-		80:  {"right,50%", 37},
-		99:  {"right,50%", 47},
-		100: {"down,50%", 97},
-		200: {"down,50%", 197},
-	} {
-		window, tableWidth := previewLayout(width)
-		if window != want.window || tableWidth != want.tableWidth {
-			t.Errorf("previewLayout(%d) = %q, %d, want %q, %d", width, window, tableWidth, want.window, want.tableWidth)
+func TestListTableWidthFitsFzfList(t *testing.T) {
+	// プレビューは一覧の下に置くため、一覧は端末の全幅になる。表の幅は、そこから左のカーソルと印の 2 桁と右のスクロールバーの 1 桁を引いたもの。
+	for width, want := range map[int]int{0: 0, 80: 77, 100: 97, 200: 197} {
+		if got := listTableWidth(width); got != want {
+			t.Errorf("listTableWidth(%d) = %d, want %d", width, got, want)
 		}
 	}
 }

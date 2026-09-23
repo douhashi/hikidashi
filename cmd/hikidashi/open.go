@@ -88,8 +88,7 @@ func chooseDrawer(root string, width int, stderr io.Writer) (drawer.Drawer, bool
 		return drawer.Drawer{}, false, err
 	}
 
-	window, tableWidth := previewLayout(width)
-	header, rows := show.TableLines(summaries, tableWidth)
+	header, rows := show.TableLines(summaries, listTableWidth(width))
 	// 各行は「slug TAB 表の行」。見出しの行は slug を持たず、fzf が選べない行として一覧の上に固定する。
 	lines := make([]string, 0, len(header)+len(rows))
 	for _, h := range header {
@@ -98,7 +97,7 @@ func chooseDrawer(root string, width int, stderr io.Writer) (drawer.Drawer, bool
 	for i, r := range rows {
 		lines = append(lines, summaries[i].Drawer.Slug()+"\t"+r)
 	}
-	line, ok, err := choose(lines, len(header), exe, window, stderr)
+	line, ok, err := choose(lines, len(header), exe, stderr)
 	if err != nil || !ok {
 		return drawer.Drawer{}, false, err
 	}
@@ -111,29 +110,22 @@ func chooseDrawer(root string, width int, stderr io.Writer) (drawer.Drawer, bool
 	return drawer.Drawer{}, false, fmt.Errorf("unexpected selection %q", line)
 }
 
-// downPreviewMinWidth は、プレビューを一覧の下に全幅で出す端末の最小の幅。これより狭ければ、今までどおり右に出す。
-const downPreviewMinWidth = 100
-
 // fzfListInset は fzf の一覧の 1 行のうち、行の文字に使えない桁数。左のカーソルと印の 2 桁と、右のスクロールバーの 1 桁。
 const fzfListInset = 3
 
-// previewLayout は幅 width（0 は不明）の端末での fzf のプレビューの配置（--preview-window）と、一覧に収める表の幅（0 は制限なし）を返す。
-// 広い端末ではプレビューを一覧の下に置き、一覧は全幅になる。狭い・不明なら右に端末の幅の 50%（切り捨て）で置き、一覧は残りになる。
-// fzf の --preview-window の条件（<N）は down では高さ、right では幅を見て「広ければ下」を表せないため、起動時にここで決める。
-func previewLayout(width int) (window string, tableWidth int) {
-	switch {
-	case width >= downPreviewMinWidth:
-		return "down,50%", width - fzfListInset
-	case width > 0:
-		return "right,50%", width - width*50/100 - fzfListInset
+// listTableWidth は幅 width（0 は不明）の端末で、fzf の一覧に収める表の幅（0 は制限なし）を返す。
+// プレビューは一覧の下に置くため、一覧は端末の全幅になる。
+func listTableWidth(width int) int {
+	if width <= 0 {
+		return 0
 	}
-	return "right,50%", 0
+	return width - fzfListInset
 }
 
 // choose は lines を fzf に渡し、選ばれた行を返す。先頭の headerLines 行は選べない見出しとして一覧の上に固定する。
 // 各行の先頭の列（slug）は見せず、プレビューの hikidashi show にだけ渡す。絞り込みは表の名前のセルにだけ当てる。
-// window はプレビューの配置。Esc 等で何も選ばれなければ ok=false を返す。fzf の画面は端末（/dev/tty）と stderr に出る。
-func choose(lines []string, headerLines int, exe, window string, stderr io.Writer) (line string, ok bool, err error) {
+// プレビューは一覧の下に全幅で置く。Esc 等で何も選ばれなければ ok=false を返す。fzf の画面は端末（/dev/tty）と stderr に出る。
+func choose(lines []string, headerLines int, exe string, stderr io.Writer) (line string, ok bool, err error) {
 	cmd := exec.Command("fzf",
 		// 表の行の色を見せ、区切りの TAB と表の縦の罫線で列に分ける。1 列目は slug、2 列目は表の左の罫線より後ろの名前のセル。
 		"--ansi", fmt.Sprintf("--header-lines=%d", headerLines), "--delimiter=\t|│", "--with-nth=2..", "--nth=2",
@@ -141,7 +133,7 @@ func choose(lines []string, headerLines int, exe, window string, stderr io.Write
 		"--no-sort", "--layout=reverse",
 		// プレビューのコマンドの引用を、利用者のログインシェルによらず POSIX sh の規則に揃える。
 		"--with-shell=sh -c",
-		"--preview="+shellQuote(exe)+" show {1}", "--preview-window="+window,
+		"--preview="+shellQuote(exe)+" show {1}", "--preview-window=down,50%",
 	)
 	// 一覧とプレビューの出力は fzf へのパイプで端末でないため、色を強制する。NO_COLOR が設定されていれば強制しない。
 	cmd.Env = os.Environ()
