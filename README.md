@@ -52,7 +52,6 @@ chmod +x ~/.local/bin/hikidashi
 
 成果物を照合するときは、同じ場所の `checksums.txt` と `sha256sum`（macOS は `shasum -a 256`）の値を比べる。
 `~/.local/bin` は `PATH` に通しておく。`PATH` 上の hikidashi の版は `hikidashi version` で確かめられる。
-更新するときも同じ手順で上書きする。
 
 ```sh
 claude plugin marketplace add douhashi/hikidashi
