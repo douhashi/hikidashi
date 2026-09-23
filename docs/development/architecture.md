@@ -201,7 +201,8 @@ hook・extract・`hikidashi notes`・`hikidashi add`・引数なしの `hikidash
 - 未登録はエラーではない。hook・extract は `hikidashi.log` にも何も書かずに exit 0 で終える。人が登録していないリポジトリで Claude Code が動くのは普通のことであり、そのたびに記録やログを残さないため
 - 引き出しの一覧は `drawers/` 配下の列挙で得る。別途の一覧ファイルは持たない
 - submodule を親の引き出しに寄せない理由: 独立したリポジトリであり、語彙どおり別の案件として扱う。submodule の worktree も別の引き出しになる
-- `$TMUX_PANE` が空（tmux 外）のセッションは状態を記録しない。記録対象を広げるかは #41 で決める。備忘録の注入は行う
+- `$TMUX_PANE` が空（tmux 外）のセッションは状態を記録しない。備忘録の注入は行う
+- tmux 外を記録しない理由: Claude Code は案件の tmux セッションで動かすもの（1 案件 = 1 tmux セッション）であり、その外のセッションは追う対象にしない（#41）
 
 ### `hikidashi add`
 
