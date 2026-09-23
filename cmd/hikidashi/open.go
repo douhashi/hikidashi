@@ -118,7 +118,7 @@ func drawerLines(drawers []drawer.Drawer, home string) []string {
 	return lines
 }
 
-// tildePath は home 配下の path の home を ~ に縮める。案件を見分ける末尾が fzf の幅で切られにくくするため。
+// tildePath は home 配下の path の home を ~ に縮める。案件を見分ける末尾が fzf や補完の候補の幅で切られにくくするため。
 // home の外（home と前方一致するだけの兄弟を含む）や、home が / のときはそのまま返す。
 func tildePath(path, home string) string {
 	home = strings.TrimSuffix(home, "/")

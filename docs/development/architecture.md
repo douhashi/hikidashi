@@ -63,6 +63,8 @@ flowchart LR
   SK --> LS
   SK --> SH
   SK --> RM
+  CP[シェルの補完] -- Tab --> CO[hikidashi __complete]
+  CO -- 読む --> D
 ```
 
 | 要素 | 実体 | 役割 |
@@ -77,6 +79,7 @@ flowchart LR
 | `hikidashi list` | 人間・skill から呼んだ Claude Code が起動 | 全案件の概況を出す |
 | `hikidashi show` | 人間・skill から呼んだ Claude Code が起動 | 1 案件（省略時は作業ディレクトリの案件）の詳細を出す |
 | `hikidashi notes` | 人間が起動 | 現在の引き出しの `notes.md` を `$EDITOR` で開く |
+| `hikidashi completion` | 人間がシェルの設定から起動 | zsh・bash の補完スクリプトを出す。候補はスクリプトが隠しコマンド `hikidashi __complete` で得る |
 | plugin | `plugin/hooks/hooks.json`・`plugin/skills/hikidashi/SKILL.md` | イベントを繋ぐ・頼まれたコマンドを実行するだけでロジックは持たない |
 
 - 言語は Go とする。hook はツール呼び出しのたびに起動するため起動の速さが効き、単一バイナリで依存なく配れる
@@ -323,6 +326,16 @@ hook・extract・`hikidashi notes`・`hikidashi add`・引数なしの `hikidash
 - 数えるリポジトリは `gh` の選択に従う（`gh repo set-default`、無ければリモート名 `upstream` → `github` → `origin` の順）。fork で `upstream` を持つと元のリポジトリの件数になるため、`gh repo set-default` で選び直す
 - 件数が得られない（GitHub のリモートが無い・`gh` が無い・認証切れ・打ち切り）ときは `?` とし、0 件と区別する。理由を stderr に出したうえで exit 0 とする
 - 存在しない引き出しは理由を stderr に出して exit 1、引数が 2 個以上なら exit 2 とする
+
+### `hikidashi completion`
+
+- `hikidashi completion <zsh|bash>` は補完スクリプトを stdout に出す。zsh は compinit の後に `source <(hikidashi completion zsh)`、bash は `source <(hikidashi completion bash)` で有効にする
+- スクリプトは Tab のたびに `hikidashi __complete <hikidashi より後ろの語...>` を呼び、最後の語を接頭辞とする候補を `値 TAB 説明` の行で受け取る。候補の決め方は Go 側に集め、スクリプトは受け渡しだけをする
+- 候補は 1 語目ならサブコマンド（説明は概要）、2 語目なら `open`・`show`・`remove` は登録済みの引き出し、`completion` は `zsh`・`bash` とし、それ以外は出さない
+- 引き出しの候補は毎回 `drawer.json` を読むため、`add`・`remove` の直後から反映される。名前の順（同名は slug の順）に並べ、説明はパス（ホーム配下は `~` 始まり）とする
+- 引き出しの値は、`name` が一意でどの slug とも一致しなければ `name`、それ以外は slug とする。上記「`hikidashi remove`」の規則で必ずその引き出しに当たり、曖昧エラーにならない
+- zsh は `_describe`、bash は bash-completion に頼らず `complete -F` で渡す。どちらも `hikidashi __complete` の stderr は捨てる
+- `completion` の引数が 1 個でない・対応していないシェルなら exit 2。`__complete` は使い方に出さず、候補を得られなければ stdout に何も出さず exit 1 とする
 
 ## 未決事項
 

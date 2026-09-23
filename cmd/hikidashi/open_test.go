@@ -56,11 +56,7 @@ func (e openEnv) drawer(t *testing.T, name, slug string) drawer.Drawer {
 // drawerAt は slug の引き出しを、name のリポジトリのルート path とともに登録して返す。
 func (e openEnv) drawerAt(t *testing.T, name, slug, path string) drawer.Drawer {
 	t.Helper()
-	d := drawer.Drawer{Dir: filepath.Join(e.dataRoot, "drawers", slug), Path: path, Name: name}
-	if err := d.Register(); err != nil {
-		t.Fatal(err)
-	}
-	return d
+	return registerAt(t, e.dataRoot, name, slug, path)
 }
 
 // fzfArgs は偽の fzf が受け取った引数を返す。fzf が起動されていなければ nil を返す。
