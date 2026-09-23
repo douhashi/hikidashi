@@ -105,19 +105,24 @@ set -g status-right '#(hikidashi status) %H:%M'
 
 ## 案件の状況を見る
 
-`hikidashi list` は、登録済みの全案件の概況を 1 案件 1 行で出す。
-Open な Issue の件数と、状態ごとのセッションの件数が並ぶ。
+`hikidashi list` は、登録済みの全案件の概況を 1 案件 1 行の表で出す。
+Open な Issue の件数と、状態ごとのセッションの件数が並び、1 件以上の件数は状態ごとの色で示す。
 
 ```sh
 hikidashi list
-# api       api-3f2a9c1b       issues:3  running:1  waiting:1  idle:2
-# frontend  frontend-0a1b2c3d  issues:?  running:0  waiting:0  idle:0
+# ╭──────────┬───────────────────┬────────┬─────────┬─────────┬──────╮
+# │ DRAWER   │ SLUG              │ ISSUES │ RUNNING │ WAITING │ IDLE │
+# ├──────────┼───────────────────┼────────┼─────────┼─────────┼──────┤
+# │ api      │ api-3f2a9c1b      │      3 │       1 │       1 │    2 │
+# │ frontend │ frontend-0a1b2c3d │      ? │       0 │       0 │    0 │
+# ╰──────────┴───────────────────┴────────┴─────────┴─────────┴──────╯
 ```
 
-`issues:?` は件数を取れなかった（GitHub のリモートが無い・`gh` が使えない等）ことを表し、理由は stderr に出る。
+`ISSUES` の `?` は件数を取れなかった（GitHub のリモートが無い・`gh` が使えない等）ことを表し、理由は stderr に出る。
 件数は `gh` が選ぶリポジトリのもので、fork で `upstream` を持つリポジトリでは `gh repo set-default` で数える先を選べる。
 
-`hikidashi show <案件>` は、その案件のセッションごとの状態・放置時間・pane・次アクションと、備忘録を出す。
+`hikidashi show <案件>` は、その案件のセッションごとの状態・放置時間・pane・次アクションと、備忘録を枠に分けて出す。
+セッションの枠の色と札で状態が分かる。
 `<案件>` にはリポジトリ名か、同名の案件があるときは slug（`api-3f2a9c1b`）を指定する。
 `<案件>` を省くと、作業ディレクトリのリポジトリの案件を出す。
 
@@ -125,7 +130,7 @@ hikidashi list
 hikidashi show api
 ```
 
-出力は素のテキストで、Claude Code に読ませてもそのまま使える。
+色は端末に出すときだけ付く。パイプの先や `NO_COLOR` を設定したときは色の制御文字を含まない罫線だけのテキストになり、Claude Code に読ませてもそのまま使える。
 
 ## Claude Code に頼む
 

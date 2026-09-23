@@ -31,6 +31,18 @@ func TestOpenIssuesRunsGhAtRepositoryRoot(t *testing.T) {
 	}
 }
 
+func TestOpenIssuesIgnoresForcedColor(t *testing.T) {
+	gh := testutil.NewFakeGh(t)
+	repo := t.TempDir()
+	gh.OpenIssues(t, repo, 7)
+	// hikidashi open の fzf のプレビューは、色を出させるため CLICOLOR_FORCE=1 で hikidashi show を起動する。
+	t.Setenv("CLICOLOR_FORCE", "1")
+
+	if got, err := OpenIssues(context.Background(), repo); err != nil || got != 7 {
+		t.Errorf("OpenIssues = %d, err %v, want 7", got, err)
+	}
+}
+
 func TestOpenIssuesZeroIsACount(t *testing.T) {
 	gh := testutil.NewFakeGh(t)
 	repo := t.TempDir()

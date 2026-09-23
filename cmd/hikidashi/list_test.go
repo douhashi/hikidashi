@@ -30,9 +30,14 @@ func TestListCountsStatesAndIssuesPerDrawer(t *testing.T) {
 	if code != 0 {
 		t.Errorf("list = %d, want 0", code)
 	}
-	want := "api       api-0123abcd       issues:3  running:1  waiting:1  idle:2\n" +
-		"frontend  frontend-0123abcd  issues:?  running:0  waiting:0  idle:0\n" +
-		"web       web-0123abcd       issues:0  running:0  waiting:1  idle:0\n"
+	// 端末でない stdout には色を付けない。
+	want := "╭──────────┬───────────────────┬────────┬─────────┬─────────┬──────╮\n" +
+		"│ DRAWER   │ SLUG              │ ISSUES │ RUNNING │ WAITING │ IDLE │\n" +
+		"├──────────┼───────────────────┼────────┼─────────┼─────────┼──────┤\n" +
+		"│ api      │ api-0123abcd      │      3 │       1 │       1 │    2 │\n" +
+		"│ frontend │ frontend-0123abcd │      ? │       0 │       0 │    0 │\n" +
+		"│ web      │ web-0123abcd      │      0 │       0 │       1 │    0 │\n" +
+		"╰──────────┴───────────────────┴────────┴─────────┴─────────┴──────╯\n"
 	if stdout != want {
 		t.Errorf("stdout =\n%s\nwant\n%s", stdout, want)
 	}

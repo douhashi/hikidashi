@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -67,6 +68,18 @@ func interrupt(t *testing.T, s session.Session, at time.Time) {
 			at.UTC().Format(time.RFC3339)+`"}`+"\n")
 }
 
+// drawerFrame は、名前が api で slug が api-0123abcd の引き出しの枠を、色なしで返す。
+// 枠の幅は最も長い path の行（ASCII のパス）に合わせる。
+func drawerFrame(path, issues string) string {
+	width := len("path          ") + len(path)
+	row := func(s string) string { return fmt.Sprintf("│ %-*s │\n", width, s) }
+	return "╭─ api " + strings.Repeat("─", width-4) + "╮\n" +
+		row("path          "+path) +
+		row("slug          api-0123abcd") +
+		row("issues        "+issues) +
+		"╰" + strings.Repeat("─", width+2) + "╯\n"
+}
+
 func TestShowDetailPrintsSessionsAndNotes(t *testing.T) {
 	env := newShowEnv(t)
 	now := time.Now()
@@ -81,28 +94,28 @@ func TestShowDetailPrintsSessionsAndNotes(t *testing.T) {
 	testutil.WriteFile(t, api.NotesPath(), "# 案件メモ\n本番は触らない\n")
 	env.gh.OpenIssues(t, api.Path, 3)
 
-	want := "api  " + api.Path + "\n" +
-		"slug:   api-0123abcd\n" +
-		"issues: 3\n" +
-		"\n── session w1 ──\n" +
-		"state:        waiting (10m)\n" +
-		"pane:         %w1\n" +
-		"summary:      API を直している\n" +
-		"human_next:   権限を承認する\n" +
-		"claude_next:  -\n" +
-		"blockers:\n" +
-		"  - CI が落ちている\n" +
-		"generated_at: -\n" +
-		"\n── session i1 ──\n" +
-		"state:        idle (5m)\n" +
-		"pane:         %i1\n" +
-		"(next action not extracted yet)\n" +
-		"\n── session r1 ──\n" +
-		"state:        running (3h)\n" +
-		"pane:         %r1\n" +
-		"(next action not extracted yet)\n" +
-		"\n── notes.md ──\n" +
-		"# 案件メモ\n本番は触らない\n"
+	// 端末でない stdout には色を付けない。
+	want := drawerFrame(api.Path, "3 open") +
+		"╭─ session w1  WAITING 10m  ──────╮\n" +
+		"│ pane          %w1               │\n" +
+		"│ summary       API を直している  │\n" +
+		"│ human_next    権限を承認する    │\n" +
+		"│ claude_next   -                 │\n" +
+		"│ blockers      - CI が落ちている │\n" +
+		"│ generated_at  -                 │\n" +
+		"╰─────────────────────────────────╯\n" +
+		"╭─ session i1  IDLE 5m  ──────────╮\n" +
+		"│ pane          %i1               │\n" +
+		"│ (next action not extracted yet) │\n" +
+		"╰─────────────────────────────────╯\n" +
+		"╭─ session r1  RUNNING 3h  ───────╮\n" +
+		"│ pane          %r1               │\n" +
+		"│ (next action not extracted yet) │\n" +
+		"╰─────────────────────────────────╯\n" +
+		"╭─ notes.md ─────╮\n" +
+		"│ # 案件メモ     │\n" +
+		"│ 本番は触らない │\n" +
+		"╰────────────────╯\n"
 	// slug でも、一意に決まるリポジトリ名でも引ける。
 	for _, key := range []string{"api-0123abcd", "api"} {
 		t.Run(key, func(t *testing.T) {
@@ -117,6 +130,23 @@ func TestShowDetailPrintsSessionsAndNotes(t *testing.T) {
 		})
 	}
 	testutil.AssertEntries(t, filepath.Join(api.Dir, "sessions"), "i1.json", "r1.json", "w1.json", "w1.next.json")
+}
+
+func TestShowKeepsColorsWhenForced(t *testing.T) {
+	env := newShowEnv(t)
+	api := env.drawer(t, "api", "api-0123abcd")
+	env.session(t, api, "w1", session.Waiting, time.Now())
+	env.gh.OpenIssues(t, api.Path, 1)
+	// fzf のプレビューと同じく、端末でない stdout に色を強制する。
+	t.Setenv("CLICOLOR_FORCE", "1")
+	t.Setenv("NO_COLOR", "")
+
+	code, stdout, _ := invoke(commands, "", "show", "api")
+
+	// どの色かは internal/show のテストが確かめる。ここでは stdout が色を落とさないことだけを見る。
+	if code != 0 || !strings.Contains(stdout, "\x1b[") {
+		t.Errorf("show api = %d, stdout %q, want 0 and colored", code, stdout)
+	}
 }
 
 func TestShowWithoutArgumentsPrintsCurrentDrawer(t *testing.T) {
@@ -201,7 +231,12 @@ func TestShowDetailWithoutSessionsNotesOrIssues(t *testing.T) {
 	if code != 0 {
 		t.Errorf("show api = %d, want 0", code)
 	}
-	if want := "api  " + api.Path + "\nslug:   api-0123abcd\nissues: ?\n\n(no sessions)\n\n── notes.md ──\n(no notes)\n"; stdout != want {
+	want := drawerFrame(api.Path, "?") +
+		"(no sessions)\n" +
+		"╭─ notes.md ─╮\n" +
+		"│ (no notes) │\n" +
+		"╰────────────╯\n"
+	if stdout != want {
 		t.Errorf("stdout =\n%s\nwant\n%s", stdout, want)
 	}
 	if want := "hikidashi show: api-0123abcd: open issues unavailable: gh repo view --json issues: exit status 1: HTTP 401: Bad credentials\n"; stderr != want {

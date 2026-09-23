@@ -334,6 +334,7 @@ type GhCall struct {
 // fakeGhScript は偽の gh の本体。%s はデータのディレクトリ（単一引用符で囲める値）。
 // 応答は repos/<作業ディレクトリ>/ に置く。hang があれば止められるまで待ち、
 // 無ければ stdout と stderr を出して code で終わる。応答の無いリポジトリでは、GitHub のリモートが無いときの gh を模す。
+// 本物の gh と同じく、CLICOLOR_FORCE が 0 以外なら --json の出力にも色を付ける。
 const fakeGhScript = `#!/bin/sh
 d='%s'
 n=1
@@ -346,6 +347,7 @@ if [ ! -e "$r/code" ]; then
 	echo "none of the git remotes configured for this repository point to a known GitHub host" >&2
 	exit 1
 fi
+[ -n "$CLICOLOR_FORCE" ] && [ "$CLICOLOR_FORCE" != 0 ] && printf '\033[1;37m'
 cat "$r/stdout"
 cat "$r/stderr" >&2
 exit "$(cat "$r/code")"

@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"time"
 )
@@ -23,6 +24,8 @@ func OpenIssues(ctx context.Context, dir string) (int, error) {
 
 	cmd := exec.CommandContext(ctx, "gh", "repo", "view", "--json", "issues")
 	cmd.Dir = dir
+	// 出力は JSON として読むため、色を強制された環境（hikidashi open の fzf のプレビュー）でも gh に色を付けさせない。
+	cmd.Env = append(os.Environ(), "CLICOLOR_FORCE=0")
 	// gh が止められても子プロセスが出力を握ったまま残ったときに、待ち続けないようにする。
 	cmd.WaitDelay = time.Second
 	var stderr bytes.Buffer

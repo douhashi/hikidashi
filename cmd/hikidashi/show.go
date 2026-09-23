@@ -39,7 +39,7 @@ func showDrawer(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	return detail(root, key, stdout, stderr)
+	return detail(root, key, colorWriter(stdout), stderr)
 }
 
 // showKey は詳細を出す引き出しの鍵を返す。引数があればそれを、無ければ作業ディレクトリの引き出しの slug を返す。
