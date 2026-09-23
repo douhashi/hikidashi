@@ -55,10 +55,14 @@ jobs:
       - name: Lint docs
         run: mise run lint:docs
 
+  # 対象 OS（Linux・macOS）ごとに走らせる。生存確認が OS ごとに実装を持つため。
   full:
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4

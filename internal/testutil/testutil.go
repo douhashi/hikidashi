@@ -108,7 +108,7 @@ func AssertPerm(t *testing.T, path string, want os.FileMode) {
 }
 
 // StartClaude は sleep の実行ファイルを claude という名前で複製して起動し、その PID を返す。
-// /proc/<pid>/comm が claude になるため、Claude Code 本体の生存確認の対象になる。プロセスはテストの終わりに止める。
+// プロセス名が claude になるため、Claude Code 本体の生存確認の対象になる。プロセスはテストの終わりに止める。
 func StartClaude(t *testing.T) int {
 	t.Helper()
 	sleep, err := exec.LookPath("sleep")

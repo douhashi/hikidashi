@@ -23,5 +23,5 @@ func Alive(pid int) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return string(bytes.TrimSuffix(comm, []byte("\n"))) == "claude", nil
+	return string(bytes.TrimSuffix(comm, []byte("\n"))) == processName, nil
 }

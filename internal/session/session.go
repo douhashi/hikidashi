@@ -26,6 +26,9 @@ const (
 	Idle State = "idle"
 )
 
+// processName は Claude Code 本体のプロセス名。Alive が PID の再利用と見分けるのに使う。
+const processName = "claude"
+
 // Session は 1 セッションの状態。JSON の形は sessions/<session_id>.json のスキーマ。
 type Session struct {
 	SessionID      string    `json:"session_id"`
