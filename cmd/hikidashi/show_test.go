@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -66,55 +67,6 @@ func interrupt(t *testing.T, s session.Session, at time.Time) {
 			at.UTC().Format(time.RFC3339)+`"}`+"\n")
 }
 
-func TestShowOverviewCountsStatesAndIssuesPerDrawer(t *testing.T) {
-	env := newShowEnv(t)
-	now := time.Now()
-	web := env.drawer(t, "web", "web-0123abcd")
-	api := env.drawer(t, "api", "api-0123abcd")
-	env.drawer(t, "frontend", "frontend-0123abcd")
-	env.session(t, api, "r1", session.Running, now)
-	env.session(t, api, "w1", session.Waiting, now)
-	env.session(t, api, "i1", session.Idle, now)
-	interrupt(t, env.session(t, api, "i2", session.Running, now.Add(-10*time.Minute)), now.Add(-5*time.Minute))
-	env.dead(t, api, "gone")
-	env.session(t, web, "w2", session.Waiting, now)
-	env.gh.OpenIssues(t, api.Path, 3)
-	env.gh.OpenIssues(t, web.Path, 0)
-
-	code, stdout, stderr := invoke(commands, "", "show")
-
-	if code != 0 {
-		t.Errorf("show = %d, want 0", code)
-	}
-	want := "api       api-0123abcd       issues:3  running:1  waiting:1  idle:2\n" +
-		"frontend  frontend-0123abcd  issues:?  running:0  waiting:0  idle:0\n" +
-		"web       web-0123abcd       issues:0  running:0  waiting:1  idle:0\n"
-	if stdout != want {
-		t.Errorf("stdout =\n%s\nwant\n%s", stdout, want)
-	}
-	if want := "hikidashi show: frontend-0123abcd: open issues unavailable: gh repo view --json issues: exit status 1: none of the git remotes"; !strings.HasPrefix(stderr, want) {
-		t.Errorf("stderr = %q, want prefix %q", stderr, want)
-	}
-	if n := strings.Count(stderr, "\n"); n != 1 {
-		t.Errorf("stderr has %d lines, want 1: %q", n, stderr)
-	}
-	// 死んだ claude のセッションは数えず、ファイルも消える（open / status と同じ後始末）。
-	testutil.AssertEntries(t, filepath.Join(api.Dir, "sessions"), "i1.json", "i2.json", "r1.json", "w1.json")
-}
-
-func TestShowWithoutDrawersSaysSo(t *testing.T) {
-	env := newShowEnv(t)
-
-	code, stdout, stderr := invoke(commands, "", "show")
-
-	if code != 0 || stdout != "no drawers registered (run hikidashi add in a repository)\n" || stderr != "" {
-		t.Errorf("show = %d, stdout %q, stderr %q, want 0 and the notice", code, stdout, stderr)
-	}
-	if got := env.gh.Calls(t); got != nil {
-		t.Errorf("gh ran with %+v, want not run", got)
-	}
-}
-
 func TestShowDetailPrintsSessionsAndNotes(t *testing.T) {
 	env := newShowEnv(t)
 	now := time.Now()
@@ -165,6 +117,78 @@ func TestShowDetailPrintsSessionsAndNotes(t *testing.T) {
 		})
 	}
 	testutil.AssertEntries(t, filepath.Join(api.Dir, "sessions"), "i1.json", "r1.json", "w1.json", "w1.next.json")
+}
+
+func TestShowWithoutArgumentsPrintsCurrentDrawer(t *testing.T) {
+	for name, cwd := range map[string]func(t *testing.T, repo string) string{
+		"subdirectory": func(t *testing.T, repo string) string {
+			sub := filepath.Join(repo, "src")
+			if err := os.MkdirAll(sub, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			return sub
+		},
+		"worktree": func(t *testing.T, repo string) string {
+			worktree := filepath.Join(t.TempDir(), "api-wt")
+			testutil.Git(t, repo, "worktree", "add", "-q", worktree)
+			return worktree
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			env := newShowEnv(t)
+			repo, d := newRegisteredRepo(t, env.dataRoot)
+			env.drawer(t, "web", "web-0123abcd")
+			env.session(t, d, "w1", session.Waiting, time.Now().Add(-10*time.Minute))
+			testutil.WriteFile(t, d.NotesPath(), "本番は触らない\n")
+			env.gh.OpenIssues(t, repo, 2)
+			t.Chdir(cwd(t, repo))
+			_, want, _ := invoke(commands, "", "show", d.Slug())
+
+			code, stdout, stderr := invoke(commands, "", "show")
+
+			if code != 0 || stderr != "" {
+				t.Errorf("show = %d, stderr %q, want 0 and silent", code, stderr)
+			}
+			if stdout != want {
+				t.Errorf("stdout =\n%s\nwant the same as show %s\n%s", stdout, d.Slug(), want)
+			}
+		})
+	}
+}
+
+func TestShowWithoutArgumentsFailsOutsideRegisteredDrawer(t *testing.T) {
+	for name, tc := range map[string]struct {
+		cwd  func(t *testing.T, dataRoot string) string
+		want string
+	}{
+		"unregistered repository": {
+			cwd: func(t *testing.T, dataRoot string) string {
+				repo, _ := newRepo(t, dataRoot)
+				return repo
+			},
+			want: ` is not in a registered drawer; run "hikidashi add" in the repository to register it`,
+		},
+		"outside Git": {
+			cwd:  func(t *testing.T, _ string) string { return t.TempDir() },
+			want: ` is not in a Git repository; run "hikidashi list" to see all drawers`,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			env := newShowEnv(t)
+			env.drawer(t, "web", "web-0123abcd")
+			cwd := tc.cwd(t, env.dataRoot)
+			t.Chdir(cwd)
+
+			code, stdout, stderr := invoke(commands, "", "show")
+
+			if want := "hikidashi show: " + cwd + tc.want + "\n"; code != 1 || stdout != "" || stderr != want {
+				t.Errorf("show = %d, stdout %q, stderr %q, want 1 and %q", code, stdout, stderr, want)
+			}
+			if got := env.gh.Calls(t); got != nil {
+				t.Errorf("gh ran with %+v, want not run", got)
+			}
+		})
+	}
 }
 
 func TestShowDetailWithoutSessionsNotesOrIssues(t *testing.T) {

@@ -4,6 +4,7 @@ description: hikidashi の案件の登録・状況確認・登録取り消しを
 allowed-tools:
   - Bash(command -v hikidashi)
   - Bash(hikidashi add)
+  - Bash(hikidashi list)
   - Bash(hikidashi show *)
 ---
 
@@ -28,9 +29,9 @@ allowed-tools:
 - 対象が今の作業ディレクトリと別のリポジトリなら `cd <path> && hikidashi add` とする
 - 出力に出た引き出しの名前と tmux セッション名を伝える
 
-## 状況を見る（show）
+## 状況を見る（list・show）
 
-- 全案件の概況は `hikidashi show`、特定の案件を尋ねられたら `hikidashi show <案件>` を実行する
+- 全案件の概況は `hikidashi list`、特定の案件を尋ねられたら `hikidashi show <案件>` を実行する
 - `<案件>` はリポジトリ名か、同名の案件があるときは slug（`api-3f2a9c1b` の形）を渡す
 - 答えは出力にある事実だけから組み立て、推測で補わない
 - `issues:?` は件数を取れなかった（GitHub のリモートが無い・`gh` が使えない等）ことを表すので、取得に失敗したと伝える
@@ -39,7 +40,7 @@ allowed-tools:
 
 `hikidashi remove` は記録したセッションを消すため、ユーザーの明示的な同意を得るまで実行しない。
 
-1. 対象を示す。`hikidashi show <案件>` を実行し、見出しの行の name・path と `slug:` の行を示す。案件が指定されていなければ、先に `hikidashi show` の一覧から今の作業ディレクトリのリポジトリに当たる案件を選ぶ
+1. 対象を示す。`hikidashi show <案件>` を実行し、見出しの行の name・path と `slug:` の行を示す。案件が指定されていなければ、引数なしの `hikidashi show` で今の作業ディレクトリの案件を示す
 2. 取り消してよいかを尋ね、ユーザーの返事を待つ。同意が無ければ実行しない
 3. 同意を得たら、示した slug を渡して `hikidashi remove <slug>` を実行する
 4. 空でない備忘録（`notes.md`）は残り、同じリポジトリで `hikidashi add` すると戻ること、tmux セッションは閉じないことを伝える
