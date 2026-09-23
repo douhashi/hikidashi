@@ -184,6 +184,28 @@ func TestCollectRemovesSessionsWhoseClaudeIsGone(t *testing.T) {
 	testutil.AssertEntries(t, sessions, "alive.json", "alive.next.json")
 }
 
+func TestDrawerReturnsOnlyItsLiveSessionsInOrder(t *testing.T) {
+	f := newFixture(t)
+	api, web := f.drawer("api"), f.drawer("web")
+	f.session(api, "a1", session.Running, at(10, 0))
+	f.session(api, "a2", session.Waiting, at(11, 0))
+	f.session(api, "a3", session.Idle, at(9, 0))
+	dead := f.session(api, "dead", session.Waiting, at(9, 0))
+	dead.ClaudePID = testutil.DeadPID(t)
+	f.write(api, dead)
+	f.session(web, "w1", session.Waiting, at(8, 0))
+
+	got, err := Drawer(api)
+
+	if err != nil {
+		t.Fatalf("Drawer: %v", err)
+	}
+	if want := []string{"api/a2", "api/a3", "api/a1"}; !slices.Equal(keys(got), want) {
+		t.Errorf("sessions = %q, want %q", keys(got), want)
+	}
+	testutil.AssertEntries(t, filepath.Join(api.Dir, "sessions"), "a1.json", "a2.json", "a3.json")
+}
+
 func TestCollectWithoutDataIsEmpty(t *testing.T) {
 	got, err := Collect(t.TempDir())
 

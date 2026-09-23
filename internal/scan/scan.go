@@ -1,4 +1,4 @@
-// Package scan は全引き出しのセッションを集め、読み手（open / status）が表示する形に整える。
+// Package scan は引き出しのセッションを集め、読み手（open / status / show）が表示する形に整える。
 // 終わったセッションの後始末と中断の扱いは docs/development/architecture.md の「セッションの後始末」
 // 「中断の扱い」、並び順は「UI」を参照。
 package scan
@@ -37,30 +37,57 @@ func Collect(dataRoot string) ([]Entry, error) {
 
 	var entries []Entry
 	for _, d := range drawers {
-		sessions, err := session.List(d.Dir)
+		es, err := live(d)
 		if err != nil {
 			return nil, err
 		}
-		for _, s := range sessions {
-			alive, err := session.Alive(s.ClaudePID)
-			if err != nil {
-				return nil, err
-			}
-			if !alive {
-				// SessionEnd が発火せずに終わったセッション。書き手が二度と書かないため、消しても競合しない。
-				if err := session.Remove(d.Dir, s.SessionID); err != nil {
-					return nil, err
-				}
-				continue
-			}
-			e, err := newEntry(d, s)
-			if err != nil {
-				return nil, err
-			}
-			entries = append(entries, e)
-		}
+		entries = append(entries, es...)
 	}
+	sortEntries(entries)
+	return entries, nil
+}
 
+// Drawer は引き出し d の生きているセッションを、並び順どおりに返す。後始末は Collect と同じ。
+func Drawer(d drawer.Drawer) ([]Entry, error) {
+	entries, err := live(d)
+	if err != nil {
+		return nil, err
+	}
+	sortEntries(entries)
+	return entries, nil
+}
+
+// live は d の生きているセッションを、ファイルの順に返す。
+// claude のプロセスが既に無いセッションは、そのファイルを消して外す。
+func live(d drawer.Drawer) ([]Entry, error) {
+	sessions, err := session.List(d.Dir)
+	if err != nil {
+		return nil, err
+	}
+	var entries []Entry
+	for _, s := range sessions {
+		alive, err := session.Alive(s.ClaudePID)
+		if err != nil {
+			return nil, err
+		}
+		if !alive {
+			// SessionEnd が発火せずに終わったセッション。書き手が二度と書かないため、消しても競合しない。
+			if err := session.Remove(d.Dir, s.SessionID); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		e, err := newEntry(d, s)
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, e)
+	}
+	return entries, nil
+}
+
+// sortEntries は entries を状態・放置の長さ・引き出し名の順に並べる。
+func sortEntries(entries []Entry) {
 	slices.SortStableFunc(entries, func(a, b Entry) int {
 		return cmp.Or(
 			cmp.Compare(rank(a.Session.State), rank(b.Session.State)),
@@ -68,7 +95,6 @@ func Collect(dataRoot string) ([]Entry, error) {
 			cmp.Compare(a.Drawer.Name, b.Drawer.Name),
 		)
 	})
-	return entries, nil
 }
 
 // newEntry は s の実効の状態と次アクションを求める。

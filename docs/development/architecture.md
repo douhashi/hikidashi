@@ -53,6 +53,10 @@ flowchart LR
   O -- 読む --> A
   O -- switch-client --> T[tmux pane]
   ST[hikidashi status] -- 読む --> S
+  SH[hikidashi show] -- 読む --> S
+  SH -- 読む --> A
+  SH -- 読む --> N
+  SH -- gh repo view --> GH[GitHub]
 ```
 
 | 要素 | 実体 | 役割 |
@@ -64,14 +68,15 @@ flowchart LR
 | `hikidashi extract` | `Stop` の async hook から起動 | transcript の末尾から次アクションを抽出する |
 | `hikidashi open` | tmux の `display-popup` から起動 | fzf で一覧を出し、選んだ pane へ移動する |
 | `hikidashi status` | tmux の `status-right` から起動 | 入力待ちの件数を出す |
+| `hikidashi show` | 人間・skill から呼んだ Claude Code が起動 | 全案件の概況、または 1 案件の詳細を出す |
 | `hikidashi notes` | 人間が起動 | 現在の引き出しの `notes.md` を `$EDITOR` で開く |
 | plugin | `plugin/hooks/hooks.json` | 各イベントを `hikidashi` に繋ぐだけ。ロジックは持たない |
 
 - 言語は Go とする。hook はツール呼び出しのたびに起動するため起動の速さが効き、単一バイナリで依存なく配れる
 - plugin はリポジトリ直下の marketplace（`.claude-plugin/marketplace.json`）から `hikidashi@hikidashi` として配る
 - plugin にはバイナリを同梱しない。プラットフォームごとのバイナリを plugin に積むと配布が重くなるため、`PATH` 上の `hikidashi` を呼ぶ
-- 外部コマンドへの依存は `git`・`tmux`・`fzf`・`claude` に限る
-- 対象 OS は Linux とする。読み手の生存確認が `/proc` に頼るため、他の OS では `open`・`status` がエラーで終わる
+- 外部コマンドへの依存は `git`・`tmux`・`fzf`・`claude`・`gh` に限る。`gh` は `show` が Open な Issue を数えるのにだけ使う
+- 対象 OS は Linux とする。読み手の生存確認が `/proc` に頼るため、他の OS では `open`・`status`・`show` がエラーで終わる
 
 ## 状態モデル
 
@@ -121,7 +126,7 @@ stateDiagram-v2
 ユーザーが Esc で中断すると、`Stop` も `Notification`（`idle_prompt` を含む）も発火せず、状態を変える hook が無い。
 一方 transcript には、中断の記録として `[Request interrupted by user]`（ツール実行中は `[Request interrupted by user for tool use]`）で始まる `user` のエントリが残る。
 
-- 読み手（`open` / `status`）は、`running` / `waiting` のセッションについて transcript の末尾を読み、最後の `user` のエントリが中断の記録で、その時刻が `state_changed_at` より後なら `idle` として扱う
+- 読み手（`open` / `status` / `show`）は、`running` / `waiting` のセッションについて transcript の末尾を読み、最後の `user` のエントリが中断の記録で、その時刻が `state_changed_at` より後なら `idle` として扱う
 - セッションのファイルは書き換えない（書き手は hook だけ）。次の `UserPromptSubmit` で hook が正しい状態に戻す
 
 ## データの置き場
@@ -209,7 +214,7 @@ hook・extract・`hikidashi notes`・`hikidashi add`・引数なしの `hikidash
 2. `drawer.json` を先に消して登録を外す（以後 hook・extract・`open`・`status` の対象外になる）。次に `notes.md` 以外（`sessions/`）を消す。`notes.md` が無い・空白だけなら引き出しのディレクトリごと消す
 3. `drawer: <slug> (removed)` を stdout に出し、備忘録を残したときだけ `notes: <notes.md の絶対パス> (kept)` を続ける
 
-- 名前は slug の完全一致を優先し、無ければ `name` が一意に一致する引き出しとする。`name` が複数に一致すれば候補の slug を出してエラーにする。この解決は `open` のプレビューと共有する
+- 名前は slug の完全一致を優先し、無ければ `name` が一意に一致する引き出しとする。`name` が複数に一致すれば候補の slug を出してエラーにする。この解決は `open` のプレビュー・`hikidashi show` と共有する
 - 空でない備忘録を残すのは、確認なしに人の書いたものを失わないため。`drawer.json` が無いので記録・一覧・注入の対象にならず、同じパスの `hikidashi add` で slug が同じ引き出しに戻る
 - tmux セッションには触れない。pane で動く Claude Code やエディタの作業を巻き込むため。閉じるのは人が行う
 - 引数が 2 個以上なら exit 2。Git 管理外・未登録・曖昧な名前・I/O の失敗は、理由を stderr に出して exit 1 とする。未登録なら `hikidashi add` で登録できることも出す。見つからないときはデータルートにも tmux にも触れない
@@ -249,7 +254,7 @@ hook・extract・`hikidashi notes`・`hikidashi add`・引数なしの `hikidash
 
 - `SessionEnd` で `<session_id>.*` を消す。`--resume` で戻れば `SessionStart` で作り直される
 - `SessionEnd` は `/exit` や pane の kill（SIGHUP）では発火するが、SIGKILL やクラッシュでは発火しない
-- 取り残されたファイルは、読み手（`open` / `status`）が `claude_pid` のプロセスが生きていて名前（`/proc/<pid>/comm`）が `claude` であることを確かめ、そうでなければ消す
+- 取り残されたファイルは、読み手（`open` / `status` / `show`）が `claude_pid` のプロセスが生きていて名前（`/proc/<pid>/comm`）が `claude` であることを確かめ、そうでなければ消す
 - pane の存在では生死を判定しない。claude が死んでも pane はシェルに戻って残るため
 - 読み手が消すのは原則 2 の例外だが、消すのは書き手が二度と書かないファイルに限るため競合しない
 
@@ -263,8 +268,20 @@ hook・extract・`hikidashi notes`・`hikidashi add`・引数なしの `hikidash
 - 隠しキーからパスは組み立てない。slug は登録済みの引き出しのディレクトリ名と照合し、`session_id` はファイル名に使える形に限る。データルートの外を読ませないため
 - Enter で `tmux switch-client -t <pane>` し、該当 pane に移動する
 - `hikidashi status` は `waiting` の件数だけを出す。0 件なら何も出さない。出力は件数と改行のみで、引数があれば exit 2、失敗は `!` を出して exit 1 とする
+- `hikidashi show` の出力は、人が読めて skill から呼んだ Claude Code もそのまま読める素のテキストとする（下記「`hikidashi show`」）
 - tmux への組み込み（キーバインドと `status-right`）はユーザーが `tmux.conf` に書く。hikidashi は `tmux.conf` を書き換えない
 - 案件の tmux セッションは `hikidashi add` が用意する（上記「hikidashi add」）。移動は pane ID で行うため、ほかの tmux セッションで動く Claude Code のセッションも一覧から選べる
+
+### `hikidashi show`
+
+- 引数が無ければ、登録済みの全引き出しを名前の順（同名は slug の順）に 1 引き出し 1 行で出す: `<name>  <slug>  issues:<N>  running:<n>  waiting:<n>  idle:<n>`。名前と slug の列は幅を揃える
+- `hikidashi show <drawer>` は 1 つの引き出しの詳細を出す。見出し `<name>  <path>`、`slug:`、`issues:` の行、セッションごとの節（`── session <session_id> ──` に続けて `state:`（放置時間を括弧で添える）・`pane:`・次アクションの全項目）、最後に `notes.md` を出す。セッションの並びは `open` と同じ、無ければ `(no sessions)` を出す
+- 状態の件数・状態・放置時間は `open` と同じく中断を反映した実効の値で、claude が終わったセッションは後始末して数えない
+- `<drawer>` は `hikidashi remove` と同じ規則で引き出しを決める（上記「`hikidashi remove`」）。名前が複数に当たれば候補の slug を stderr に出して exit 1 とする
+- Open な Issue の件数は、リポジトリのルートで `gh repo view --json issues` を実行した `issues.totalCount`（Pull Request を含まない）とする。概況では引き出しごとに並行して数え、1 回 10 秒で打ち切る
+- 数えるリポジトリは `gh` の選択に従う（`gh repo set-default`、無ければリモート名 `upstream` → `github` → `origin` の順）。fork で `upstream` を持つと元のリポジトリの件数になるため、`gh repo set-default` で選び直す
+- 件数が得られない（GitHub のリモートが無い・`gh` が無い・認証切れ・打ち切り）ときは `issues:?` とし、0 件と区別する。理由を stderr に出したうえで exit 0 とする
+- 登録済みの引き出しが無ければ `no drawers registered (run hikidashi add in a repository)` を出して exit 0。存在しない引き出しは理由を stderr に出して exit 1、引数が 2 個以上なら exit 2 とする
 
 ## 未決事項
 

@@ -318,6 +318,104 @@ func (f *FakeTmux) Calls(t *testing.T) [][]string {
 	return calls
 }
 
+// FakeGh は PATH の先頭に置いた偽の gh コマンド。外部境界である GitHub CLI をテストで模す唯一の置き場で、
+// 呼ばれるたびに引数と作業ディレクトリを記録する。応答は作業ディレクトリ（リポジトリ）ごとに決める。
+type FakeGh struct {
+	dir string
+}
+
+// GhCall は偽の gh が受けた 1 回の呼び出し。
+type GhCall struct {
+	Args []string
+	Dir  string
+}
+
+// fakeGhScript は偽の gh の本体。%s はデータのディレクトリ（単一引用符で囲める値）。
+// 応答は repos/<作業ディレクトリ>/ に置く。hang があれば止められるまで待ち、
+// 無ければ stdout と stderr を出して code で終わる。応答の無いリポジトリでは、GitHub のリモートが無いときの gh を模す。
+const fakeGhScript = `#!/bin/sh
+d='%s'
+n=1
+while ! mkdir "$d/call$n" 2>/dev/null; do n=$((n + 1)); done
+printf '%%s\0' "$@" >"$d/call$n/args"
+pwd -P >"$d/call$n/dir"
+r="$d/repos$(pwd -P)"
+[ -e "$r/hang" ] && exec sleep 60
+if [ ! -e "$r/code" ]; then
+	echo "none of the git remotes configured for this repository point to a known GitHub host" >&2
+	exit 1
+fi
+cat "$r/stdout"
+cat "$r/stderr" >&2
+exit "$(cat "$r/code")"
+`
+
+// NewFakeGh は、どのリポジトリにも GitHub のリモートが無いものとして応える偽の gh を PATH の先頭に置く。
+func NewFakeGh(t *testing.T) *FakeGh {
+	t.Helper()
+	bin, dir := t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "gh"), fmt.Appendf(nil, fakeGhScript, dir), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return &FakeGh{dir: dir}
+}
+
+// OpenIssues は repo で実行された gh repo view --json issues に、Open な Issue が n 件あると応えさせる。
+func (f *FakeGh) OpenIssues(t *testing.T, repo string, n int) {
+	t.Helper()
+	f.respond(t, repo, fmt.Sprintf(`{"issues":{"totalCount":%d}}`+"\n", n), "", 0)
+}
+
+// Fail は repo での呼び出しを、stderr に msg を出して code で終わらせる。
+func (f *FakeGh) Fail(t *testing.T, repo, msg string, code int) {
+	t.Helper()
+	f.respond(t, repo, "", msg+"\n", code)
+}
+
+// Respond は repo での呼び出しに、stdout と stderr を出して code で終わらせる。
+func (f *FakeGh) Respond(t *testing.T, repo, stdout string, code int) {
+	t.Helper()
+	f.respond(t, repo, stdout, "", code)
+}
+
+// Hang は repo での呼び出しを、止められるまで応答させない。
+func (f *FakeGh) Hang(t *testing.T, repo string) {
+	t.Helper()
+	WriteFile(t, filepath.Join(f.repoDir(t, repo), "hang"), "")
+}
+
+func (f *FakeGh) respond(t *testing.T, repo, stdout, stderr string, code int) {
+	t.Helper()
+	r := f.repoDir(t, repo)
+	WriteFile(t, filepath.Join(r, "stdout"), stdout)
+	WriteFile(t, filepath.Join(r, "stderr"), stderr)
+	WriteFile(t, filepath.Join(r, "code"), strconv.Itoa(code))
+}
+
+// repoDir は repo の応答を置くディレクトリ。偽の gh が pwd -P で引けるよう、シンボリックリンクを解決する。
+func (f *FakeGh) repoDir(t *testing.T, repo string) string {
+	t.Helper()
+	real, err := filepath.EvalSymlinks(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return filepath.Join(f.dir, "repos", real)
+}
+
+// Calls はこれまでの呼び出しを呼ばれた順に返す。
+func (f *FakeGh) Calls(t *testing.T) []GhCall {
+	t.Helper()
+	var calls []GhCall
+	for _, c := range callDirs(f.dir) {
+		calls = append(calls, GhCall{
+			Args: nulSplit(ReadFile(t, filepath.Join(c, "args"))),
+			Dir:  strings.TrimSuffix(ReadFile(t, filepath.Join(c, "dir")), "\n"),
+		})
+	}
+	return calls
+}
+
 // callDirs は偽のコマンドが dir に残した呼び出しごとの記録（call<N>/）を、呼ばれた順に返す。
 func callDirs(dir string) []string {
 	var dirs []string
