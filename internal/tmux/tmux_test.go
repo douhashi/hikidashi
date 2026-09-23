@@ -27,11 +27,15 @@ func TestHasSessionMatchesExactName(t *testing.T) {
 	fake := testutil.NewFakeTmux(t)
 	fake.AddSession(t, "api-3f2a9c1b")
 
-	for name, want := range map[string]bool{"api-3f2a9c1b": true, "api": false} {
-		got, err := HasSession(name)
+	// 呼び出し順を確かめるので、反復順の決まらない map ではなく slice で並べる。
+	for _, tc := range []struct {
+		name string
+		want bool
+	}{{"api-3f2a9c1b", true}, {"api", false}} {
+		got, err := HasSession(tc.name)
 
-		if err != nil || got != want {
-			t.Errorf("HasSession(%q) = %v, %v, want %v", name, got, err, want)
+		if err != nil || got != tc.want {
+			t.Errorf("HasSession(%q) = %v, %v, want %v", tc.name, got, err, tc.want)
 		}
 	}
 	assertCalls(t, fake, []string{"has-session", "-t", "=api-3f2a9c1b"}, []string{"has-session", "-t", "=api"})
