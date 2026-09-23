@@ -82,10 +82,11 @@ tmux の中から案件を選んで移るには、`tmux.conf` にポップアッ
 `-d /` で Git 管理外から起動し、常に全案件の一覧を出す。
 
 ```tmux
-# prefix + h で案件の一覧を開く。-E で、切り替えた後や Esc で閉じた後にポップアップも閉じる。
-bind-key h display-popup -E -d / -w 80% -h 60% hikidashi open
+# prefix + o で案件の一覧を開く。-E で、切り替えた後や Esc で閉じた後にポップアップも閉じる。
+bind-key o display-popup -E -d / -w 80% -h 60% hikidashi open
 ```
 
+`o` は tmux 既定の「次のペインへ順に移る」（`select-pane -t :.+`）を上書きする。使っているなら空いている別のキーにする。
 `hikidashi` と `fzf` は tmux サーバーの `PATH` から見える場所に置く。
 
 ## ステータスバーに出す
