@@ -114,6 +114,21 @@ hikidashi show api
 
 出力は素のテキストで、Claude Code に読ませてもそのまま使える。
 
+## Claude Code に頼む
+
+plugin の skill（`hikidashi:hikidashi`）により、登録・状況確認・登録取り消しを Claude Code に自然な言葉で頼める。
+Claude Code は `hikidashi` のコマンドを実行し、その出力をもとに答える。
+
+```text
+この案件を登録しといて      # hikidashi add
+案件の状況は？              # hikidashi show
+api はどうなってる？        # hikidashi show api
+この案件の登録を外して      # 確認のあと hikidashi remove
+```
+
+登録の取り消しは、対象の name・slug・path を示して確認を求め、同意を得てから実行する。
+`hikidashi` が `PATH` に無ければ、コマンドを実行せず導入の手順を案内する。
+
 ## 無効化・削除
 
 ```sh
