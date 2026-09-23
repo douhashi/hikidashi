@@ -50,11 +50,7 @@ func remove(args []string, stdout io.Writer) error {
 // removeTarget は取り消す引き出しを返す。引数があれば slug か名前で、無ければ作業ディレクトリから引く。
 func removeTarget(root string, args []string) (drawer.Drawer, error) {
 	if len(args) == 1 {
-		d, ok, err := drawer.Find(root, args[0])
-		if err == nil && !ok {
-			err = notRegistered(fmt.Sprintf("no registered drawer %q", args[0]))
-		}
-		return d, err
+		return findDrawer(root, args[0])
 	}
 
 	cwd, err := os.Getwd()

@@ -140,7 +140,7 @@ func TestAddReportsTmuxFailure(t *testing.T) {
 			dataRoot, fake := addEnv(t)
 			repo, _ := newRepo(t, dataRoot)
 			t.Chdir(repo)
-			fake.Fail(t, "boom", code)
+			fake.Fail(t, name, "boom", code)
 
 			got, _, stderr := invoke(commands, "", "add")
 

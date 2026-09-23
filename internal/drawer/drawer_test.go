@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -564,5 +565,23 @@ func TestUnregisterFailsWhenNotRegistered(t *testing.T) {
 	}
 	if got := testutil.ReadFile(t, d.NotesPath()); got != "memo\n" {
 		t.Errorf("notes.md = %q, want it untouched", got)
+	}
+}
+
+func TestSortByNameOrdersByNameThenSlug(t *testing.T) {
+	drawers := []Drawer{
+		{Dir: "/d/0-web-00000000", Name: "web"},
+		{Dir: "/d/api-22222222", Name: "api"},
+		{Dir: "/d/api-11111111", Name: "api"},
+	}
+
+	SortByName(drawers)
+
+	var got []string
+	for _, d := range drawers {
+		got = append(got, d.Slug())
+	}
+	if want := []string{"api-11111111", "api-22222222", "0-web-00000000"}; !slices.Equal(got, want) {
+		t.Errorf("slugs = %q, want %q", got, want)
 	}
 }

@@ -7,84 +7,125 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"time"
+	"unicode/utf8"
 
 	"github.com/douhashi/hikidashi/internal/drawer"
-	"github.com/douhashi/hikidashi/internal/open"
-	"github.com/douhashi/hikidashi/internal/scan"
+	"github.com/douhashi/hikidashi/internal/render"
 	"github.com/douhashi/hikidashi/internal/tmux"
 )
 
-// openUsage は hikidashi open の使い方。--preview は fzf のプレビューから呼ばれる。
-const openUsage = "Usage: hikidashi open [--preview <key>]\n"
+// openUsage は hikidashi open の使い方。
+const openUsage = "Usage: hikidashi open [<drawer>]\n"
 
-// runOpen は hikidashi open の入口。引数が無ければ一覧を fzf で出して選んだ pane へ移動し、
-// --preview <key> なら key のセッションのプレビューを stdout に出す。
-func runOpen(args []string, _ io.Reader, stdout, stderr io.Writer) int {
-	var err error
-	switch {
-	case len(args) == 0:
-		err = switchToChosen(stderr)
-	case len(args) == 2 && args[0] == "--preview":
-		err = preview(stdout, args[1])
-	default:
+// runOpen は hikidashi open の入口。<drawer>（slug またはリポジトリ名）の引き出し、無ければ作業ディレクトリの
+// 引き出しの tmux セッションを開く。作業ディレクトリが Git 管理外なら、全引き出しから fzf で選ばせる。
+// 引数が 2 個以上なら exit 2、未登録・曖昧な名前・fzf や tmux の失敗は exit 1 とする。fzf を閉じただけなら exit 0 とする。
+func runOpen(args []string, _ io.Reader, _, stderr io.Writer) int {
+	if len(args) > 1 {
 		report(stderr, openUsage)
 		return 2
 	}
-	if err != nil {
+	if err := openDrawer(args, stderr); err != nil {
 		report(stderr, fmt.Sprintf("hikidashi open: %v\n", err))
 		return 1
 	}
 	return 0
 }
 
-// switchToChosen は全引き出しのセッションを fzf に並べ、選ばれたセッションの pane へ tmux で移動する。
-// 何も選ばずに fzf を閉じたときは何もしない。
-func switchToChosen(stderr io.Writer) error {
-	// switch-client は tmux のクライアントの中からでなければ移動先のクライアントが決まらない。
-	if os.Getenv("TMUX") == "" {
-		return errors.New("not inside tmux (run it in tmux, e.g. from display-popup)")
-	}
+// openDrawer は対象の引き出しの tmux セッションを、無ければ hikidashi add と同じ規則で作ってから開く。
+// tmux の中からは今のクライアントを切り替え、外からは attach する。
+func openDrawer(args []string, stderr io.Writer) error {
 	root, err := drawer.DefaultRoot()
 	if err != nil {
 		return err
 	}
-	entries, err := scan.Collect(root)
-	if err != nil {
-		return err
-	}
-	exe, err := os.Executable()
-	if err != nil {
-		return err
-	}
-
-	line, ok, err := choose(open.Lines(entries, time.Now()), exe, stderr)
+	d, ok, err := openTarget(root, args, stderr)
 	if err != nil || !ok {
 		return err
 	}
-	e, ok := open.Selected(entries, line)
-	if !ok {
-		return fmt.Errorf("unexpected selection %q", line)
+
+	name := d.TmuxSession()
+	if _, err := tmux.Ensure(name, d.Path); err != nil {
+		return err
 	}
-	return tmux.SwitchClient(e.Session.TmuxPane)
+	if os.Getenv("TMUX") != "" {
+		return tmux.SwitchClient(name)
+	}
+	return tmux.Attach(name)
 }
 
-// choose は lines を fzf に渡し、選ばれた行を返す。隠しキー（先頭の列）は見せず、プレビューにだけ渡す。
+// openTarget は開く引き出しを返す。引数があれば slug か名前で、無ければ作業ディレクトリから引き、
+// 作業ディレクトリが Git 管理外なら fzf で選ばせる。fzf で何も選ばれなければ ok=false を返す。
+func openTarget(root string, args []string, stderr io.Writer) (drawer.Drawer, bool, error) {
+	if len(args) == 1 {
+		d, err := findDrawer(root, args[0])
+		return d, err == nil, err
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return drawer.Drawer{}, false, err
+	}
+	d, inGit, err := currentDrawer(root, cwd)
+	if err != nil || inGit {
+		return d, err == nil, err
+	}
+	return chooseDrawer(root, stderr)
+}
+
+// chooseDrawer は全引き出しを fzf に並べ、選ばれた引き出しを返す。何も選ばれなければ ok=false を返す。
+func chooseDrawer(root string, stderr io.Writer) (drawer.Drawer, bool, error) {
+	drawers, err := drawer.List(root)
+	if err != nil {
+		return drawer.Drawer{}, false, err
+	}
+	if len(drawers) == 0 {
+		return drawer.Drawer{}, false, notRegistered("no drawers registered")
+	}
+	drawer.SortByName(drawers)
+	exe, err := os.Executable()
+	if err != nil {
+		return drawer.Drawer{}, false, err
+	}
+
+	line, ok, err := choose(drawerLines(drawers), exe, stderr)
+	if err != nil || !ok {
+		return drawer.Drawer{}, false, err
+	}
+	slug, _, _ := strings.Cut(line, "\t")
+	for _, d := range drawers {
+		if d.Slug() == slug {
+			return d, true, nil
+		}
+	}
+	return drawer.Drawer{}, false, fmt.Errorf("unexpected selection %q", line)
+}
+
+// drawerLines は drawers を 1 引き出し 1 行にする。行は「slug TAB 名前  パス」で、名前の列は幅を揃える。
+// fzf には TAB より後ろだけを見せ、slug はプレビューと選択に使う。
+func drawerLines(drawers []drawer.Drawer) []string {
+	width := 0
+	for _, d := range drawers {
+		width = max(width, utf8.RuneCountInString(render.OneLine(d.Name)))
+	}
+	lines := make([]string, 0, len(drawers))
+	for _, d := range drawers {
+		lines = append(lines, fmt.Sprintf("%s\t%-*s  %s", d.Slug(), width, render.OneLine(d.Name), render.OneLine(d.Path)))
+	}
+	return lines
+}
+
+// choose は lines を fzf に渡し、選ばれた行を返す。先頭の列（slug）は見せず、プレビューの hikidashi show にだけ渡す。
 // Esc 等で何も選ばれなければ ok=false を返す。fzf の画面は端末（/dev/tty）と stderr に出る。
 func choose(lines []string, exe string, stderr io.Writer) (line string, ok bool, err error) {
 	cmd := exec.Command("fzf",
 		"--delimiter=\t", "--with-nth=2..", "--no-sort",
-		// 並び順どおりに、人間が捌くべきものを上に出す。
+		// 並び順どおりに、先頭の行を上に出す。
 		"--layout=reverse",
 		// プレビューのコマンドの引用を、利用者のログインシェルによらず POSIX sh の規則に揃える。
 		"--with-shell=sh -c",
-		"--preview="+shellQuote(exe)+" open --preview {1}",
+		"--preview="+shellQuote(exe)+" show {1}",
 	)
-	var in strings.Builder
-	for _, l := range lines {
-		in.WriteString(l + "\n")
-	}
-	cmd.Stdin = strings.NewReader(in.String())
+	cmd.Stdin = strings.NewReader(strings.Join(lines, "\n") + "\n")
 	cmd.Stderr = stderr
 	out, err := cmd.Output()
 	if exit, exited := errors.AsType[*exec.ExitError](err); exited {
@@ -97,20 +138,6 @@ func choose(lines []string, exe string, stderr io.Writer) (line string, ok bool,
 		return "", false, fmt.Errorf("run fzf: %w", err)
 	}
 	return strings.TrimSuffix(string(out), "\n"), true, nil
-}
-
-// preview は隠しキー key のセッションのプレビューを stdout に書く。
-func preview(stdout io.Writer, key string) error {
-	root, err := drawer.DefaultRoot()
-	if err != nil {
-		return err
-	}
-	text, err := open.Preview(root, key)
-	if err != nil {
-		return err
-	}
-	_, err = io.WriteString(stdout, text)
-	return err
 }
 
 // shellQuote は s を POSIX sh の単一引用符で囲み、そのまま 1 語として渡るようにする。

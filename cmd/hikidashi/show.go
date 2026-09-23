@@ -51,19 +51,12 @@ func showKey(root string, args []string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	_, inGit, err := drawer.Resolve(root, cwd)
+	d, inGit, err := currentDrawer(root, cwd)
 	if err != nil {
 		return "", err
 	}
 	if !inGit {
 		return "", fmt.Errorf("%s is not in a Git repository; run \"hikidashi list\" to see all drawers", cwd)
-	}
-	d, ok, err := drawer.Lookup(root, cwd)
-	if err != nil {
-		return "", err
-	}
-	if !ok {
-		return "", notRegistered(cwd + " is not in a registered drawer")
 	}
 	return d.Slug(), nil
 }

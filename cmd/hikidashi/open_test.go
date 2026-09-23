@@ -7,10 +7,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/douhashi/hikidashi/internal/drawer"
-	"github.com/douhashi/hikidashi/internal/session"
 	"github.com/douhashi/hikidashi/internal/testutil"
 )
 
@@ -45,7 +43,17 @@ func writeFake(t *testing.T, dir, name, script string) {
 	}
 }
 
-// fzfArgs は偽の fzf が受け取った引数を返す。
+// drawer は slug の引き出しを、name のリポジトリのルート（/src/<slug>）とともに登録して返す。
+func (e openEnv) drawer(t *testing.T, name, slug string) drawer.Drawer {
+	t.Helper()
+	d := drawer.Drawer{Dir: filepath.Join(e.dataRoot, "drawers", slug), Path: "/src/" + slug, Name: name}
+	if err := d.Register(); err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
+// fzfArgs は偽の fzf が受け取った引数を返す。fzf が起動されていなければ nil を返す。
 func (e openEnv) fzfArgs(t *testing.T) []string {
 	t.Helper()
 	path := filepath.Join(e.dir, "fzf.args")
@@ -55,148 +63,245 @@ func (e openEnv) fzfArgs(t *testing.T) []string {
 	return strings.Split(strings.TrimSuffix(testutil.ReadFile(t, path), "\n"), "\n")
 }
 
-// seed は api の引き出しに、生きている claude の waiting と idle のセッションを書く。
-func (e openEnv) seed(t *testing.T) drawer.Drawer {
+// assertTmux は偽の tmux が want の引数でこの順に呼ばれたことを確かめる。want が無ければ呼ばれていない。
+func (e openEnv) assertTmux(t *testing.T, want ...[]string) {
 	t.Helper()
-	d := drawer.Drawer{Dir: filepath.Join(e.dataRoot, "drawers", "api-3f2a9c1b"), Path: "/src/api", Name: "api"}
-	if err := d.Register(); err != nil {
-		t.Fatal(err)
-	}
-	pid := testutil.StartClaude(t)
-	changed := time.Now().Add(-10 * time.Minute)
-	for id, state := range map[string]session.State{"s1": session.Idle, "s2": session.Waiting} {
-		err := session.Write(d.Dir, session.Session{
-			SessionID: id, TmuxPane: "%" + id[1:], ClaudePID: pid, State: state,
-			StateChangedAt: changed, StartedAt: changed,
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	return d
-}
-
-func TestOpenSwitchesToSelectedPane(t *testing.T) {
-	env := newOpenEnv(t)
-	env.seed(t)
-	t.Setenv("FAKE_FZF_SELECT", "api-3f2a9c1b/s1\tapi  idle     10m  -")
-
-	code, stdout, stderr := invoke(commands, "", "open")
-
-	if code != 0 || stdout != "" || stderr != "" {
-		t.Fatalf("open = %d, stdout %q, stderr %q, want 0 and silent", code, stdout, stderr)
-	}
-	if got, want := env.tmux.Calls(t), [][]string{{"switch-client", "-t", "%1"}}; !slices.EqualFunc(got, want, slices.Equal) {
+	if got := e.tmux.Calls(t); !slices.EqualFunc(got, want, slices.Equal) {
 		t.Errorf("tmux calls = %q, want %q", got, want)
 	}
+}
+
+// openCalls は open が d のセッションを開くときの tmux の呼び出し。セッションが無ければ作ってから、move で開く。
+func openCalls(d drawer.Drawer, exists bool, move string) [][]string {
+	name := d.TmuxSession()
+	calls := [][]string{{"has-session", "-t", "=" + name}}
+	if !exists {
+		calls = append(calls, []string{"new-session", "-d", "-s", name, "-c", d.Path})
+	}
+	return append(calls, []string{move, "-t", "=" + name})
+}
+
+// assertOpens は open を args で実行し、exit 0 で何も出さずに want の tmux の呼び出しで開いたことを確かめる。
+func (e openEnv) assertOpens(t *testing.T, want [][]string, args ...string) {
+	t.Helper()
+	code, stdout, stderr := invoke(commands, "", append([]string{"open"}, args...)...)
+
+	if code != 0 || stdout != "" || stderr != "" {
+		t.Errorf("open %q = %d, stdout %q, stderr %q, want 0 and silent", args, code, stdout, stderr)
+	}
+	e.assertTmux(t, want...)
+}
+
+// assertFails は open を args で実行し、exit 1 で stderr に want を出して tmux を呼ばなかったことを確かめる。
+func (e openEnv) assertFails(t *testing.T, want string, args ...string) {
+	t.Helper()
+	code, stdout, stderr := invoke(commands, "", append([]string{"open"}, args...)...)
+
+	if code != 1 || stdout != "" || stderr != want {
+		t.Errorf("open %q = %d, stdout %q, stderr %q, want 1 and %q", args, code, stdout, stderr, want)
+	}
+	e.assertTmux(t)
+}
+
+func TestOpenNamedDrawerSwitchesInsideTmux(t *testing.T) {
+	for name, exists := range map[string]bool{"existing session": true, "missing session": false} {
+		t.Run(name, func(t *testing.T) {
+			env := newOpenEnv(t)
+			d := env.drawer(t, "api", "api-3f2a9c1b")
+			if exists {
+				env.tmux.AddSession(t, d.TmuxSession())
+			}
+
+			env.assertOpens(t, openCalls(d, exists, "switch-client"), "api")
+		})
+	}
+}
+
+func TestOpenNamedDrawerAttachesOutsideTmux(t *testing.T) {
+	env := newOpenEnv(t)
+	t.Setenv("TMUX", "")
+	d := env.drawer(t, "api", "api-3f2a9c1b")
+
+	env.assertOpens(t, openCalls(d, false, "attach-session"), "api")
+}
+
+func TestOpenDrawerBySlug(t *testing.T) {
+	// 同名の引き出しは slug で選ぶ。セッション名は slug の . を _ に置き換えたもの（drawer.TmuxSession）になる。
+	env := newOpenEnv(t)
+	env.drawer(t, "example.com", "example.com-11111111")
+	d := env.drawer(t, "example.com", "example.com-22222222")
+
+	env.assertOpens(t, openCalls(d, false, "switch-client"), "example.com-22222222")
+}
+
+func TestOpenFailsForUnknownOrAmbiguousDrawer(t *testing.T) {
+	env := newOpenEnv(t)
+	env.drawer(t, "api", "api-11111111")
+	env.drawer(t, "api", "api-22222222")
+
+	for name, want := range map[string]string{
+		"nope": "hikidashi open: no registered drawer \"nope\"; run \"hikidashi add\" in the repository to register it\n",
+		"api":  "hikidashi open: \"api\" matches more than one drawer: api-11111111, api-22222222\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			env.assertFails(t, want, name)
+		})
+	}
+}
+
+func TestOpenWithoutArgumentsOpensCurrentDrawer(t *testing.T) {
+	for name, cwd := range map[string]func(t *testing.T, repo string) string{
+		"root": func(_ *testing.T, repo string) string { return repo },
+		"subdirectory": func(t *testing.T, repo string) string {
+			sub := filepath.Join(repo, "src")
+			if err := os.MkdirAll(sub, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			return sub
+		},
+		"worktree": func(t *testing.T, repo string) string {
+			worktree := filepath.Join(t.TempDir(), "api-wt")
+			testutil.Git(t, repo, "worktree", "add", "-q", worktree)
+			return worktree
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			env := newOpenEnv(t)
+			repo, d := newRegisteredRepo(t, env.dataRoot)
+			t.Chdir(cwd(t, repo))
+
+			env.assertOpens(t, openCalls(d, false, "switch-client"))
+			if got := env.fzfArgs(t); got != nil {
+				t.Errorf("fzf ran with %q, want not run", got)
+			}
+		})
+	}
+}
+
+func TestOpenWithoutArgumentsFailsInUnregisteredRepository(t *testing.T) {
+	env := newOpenEnv(t)
+	env.drawer(t, "web", "web-0123abcd")
+	repo, _ := newRepo(t, env.dataRoot)
+	t.Chdir(repo)
+
+	env.assertFails(t, "hikidashi open: "+repo+` is not in a registered drawer; run "hikidashi add" in the repository to register it`+"\n")
+	if got := env.fzfArgs(t); got != nil {
+		t.Errorf("fzf ran with %q, want not run", got)
+	}
+}
+
+// outsideGit は作業ディレクトリを Git 管理外にし、名前と slug の順が登録の順と異なる 3 つの引き出しを登録する。
+func (e openEnv) outsideGit(t *testing.T) (front, api1, api2 drawer.Drawer) {
+	t.Helper()
+	t.Chdir(t.TempDir())
+	front = e.drawer(t, "frontend", "0-frontend-0123abcd")
+	api2 = e.drawer(t, "api", "api-22222222")
+	api1 = e.drawer(t, "api", "api-11111111")
+	return front, api1, api2
+}
+
+func TestOpenOutsideGitChoosesDrawerWithFzf(t *testing.T) {
+	env := newOpenEnv(t)
+	front, api1, api2 := env.outsideGit(t)
+	t.Setenv("FAKE_FZF_SELECT", api2.Slug()+"\tapi       /src/api-22222222")
+
+	env.assertOpens(t, openCalls(api2, false, "switch-client"))
 	stdin := testutil.ReadFile(t, filepath.Join(env.dir, "fzf.stdin"))
-	if want := "api-3f2a9c1b/s2\tapi  waiting  10m  -\napi-3f2a9c1b/s1\tapi  idle     10m  -\n"; stdin != want {
+	want := api1.Slug() + "\tapi       /src/api-11111111\n" +
+		api2.Slug() + "\tapi       /src/api-22222222\n" +
+		front.Slug() + "\tfrontend  /src/0-frontend-0123abcd\n"
+	if stdin != want {
 		t.Errorf("fzf stdin = %q, want %q", stdin, want)
 	}
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{
+	wantArgs := []string{
 		"--delimiter=\t", "--with-nth=2..", "--no-sort", "--layout=reverse", "--with-shell=sh -c",
-		"--preview=" + shellQuote(exe) + " open --preview {1}",
+		"--preview=" + shellQuote(exe) + " show {1}",
 	}
-	if got := env.fzfArgs(t); !slices.Equal(got, want) {
-		t.Errorf("fzf args = %q, want %q", got, want)
+	if got := env.fzfArgs(t); !slices.Equal(got, wantArgs) {
+		t.Errorf("fzf args = %q, want %q", got, wantArgs)
 	}
 }
 
-func TestOpenCancelledDoesNotSwitch(t *testing.T) {
+func TestOpenOutsideGitCancelledDoesNothing(t *testing.T) {
 	// 130 は Esc / Ctrl-C、1 は一致する行が無いまま Enter したとき。
 	for _, exit := range []string{"130", "1"} {
 		t.Run(exit, func(t *testing.T) {
 			env := newOpenEnv(t)
-			env.seed(t)
+			env.outsideGit(t)
 			t.Setenv("FAKE_FZF_EXIT", exit)
 
-			code, _, stderr := invoke(commands, "", "open")
-
-			if code != 0 || stderr != "" {
-				t.Errorf("open = %d, stderr %q, want 0 and silent", code, stderr)
-			}
-			if got := env.tmux.Calls(t); got != nil {
-				t.Errorf("tmux ran with %q, want not run", got)
-			}
+			env.assertOpens(t, nil)
 		})
 	}
 }
 
-func TestOpenFails(t *testing.T) {
+func TestOpenOutsideGitFails(t *testing.T) {
 	for name, tc := range map[string]struct {
-		env map[string]string
-		// tmuxErr が空でなければ、tmux はこれを stderr に出して exit 1 で終わる。
-		tmuxErr string
-		stderr  string
+		env    map[string]string
+		stderr string
 	}{
-		"outside tmux":         {env: map[string]string{"TMUX": ""}, stderr: "hikidashi open: not inside tmux"},
 		"fzf fails":            {env: map[string]string{"FAKE_FZF_EXIT": "2"}, stderr: "hikidashi open: run fzf: exit status 2\n"},
-		"tmux fails":           {env: map[string]string{"FAKE_FZF_SELECT": "api-3f2a9c1b/s1\tapi"}, tmuxErr: "can't find pane: %1", stderr: "hikidashi open: tmux switch-client -t %1: exit status 1: can't find pane: %1\n"},
-		"unexpected selection": {env: map[string]string{"FAKE_FZF_SELECT": "api-3f2a9c1b/s9\tx"}, stderr: "hikidashi open: unexpected selection \"api-3f2a9c1b/s9\\tx\"\n"},
+		"unexpected selection": {env: map[string]string{"FAKE_FZF_SELECT": "api-99999999\tx"}, stderr: "hikidashi open: unexpected selection \"api-99999999\\tx\"\n"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			env := newOpenEnv(t)
-			env.seed(t)
+			env.outsideGit(t)
 			for k, v := range tc.env {
 				t.Setenv(k, v)
 			}
-			if tc.tmuxErr != "" {
-				env.tmux.Fail(t, tc.tmuxErr, 1)
-			}
 
-			code, stdout, stderr := invoke(commands, "", "open")
+			env.assertFails(t, tc.stderr)
+		})
+	}
+}
 
-			if code != 1 || stdout != "" {
-				t.Errorf("open = %d, stdout %q, want 1 and no stdout", code, stdout)
-			}
-			if !strings.HasPrefix(stderr, tc.stderr) {
-				t.Errorf("stderr = %q, want prefix %q", stderr, tc.stderr)
+func TestOpenOutsideGitWithoutDrawersGuidesToAdd(t *testing.T) {
+	env := newOpenEnv(t)
+	t.Chdir(t.TempDir())
+
+	env.assertFails(t, "hikidashi open: no drawers registered; run \"hikidashi add\" in the repository to register it\n")
+	if got := env.fzfArgs(t); got != nil {
+		t.Errorf("fzf ran with %q, want not run", got)
+	}
+}
+
+func TestOpenReportsTmuxFailure(t *testing.T) {
+	for _, tc := range []struct {
+		subcommand, tmuxEnv string
+	}{
+		{"has-session", "/tmp/tmux-1000/default,1234,0"},
+		{"new-session", "/tmp/tmux-1000/default,1234,0"},
+		{"switch-client", "/tmp/tmux-1000/default,1234,0"},
+		{"attach-session", ""},
+	} {
+		t.Run(tc.subcommand, func(t *testing.T) {
+			env := newOpenEnv(t)
+			t.Setenv("TMUX", tc.tmuxEnv)
+			env.drawer(t, "api", "api-3f2a9c1b")
+			env.tmux.Fail(t, tc.subcommand, "boom", 2)
+
+			code, stdout, stderr := invoke(commands, "", "open", "api")
+
+			if want := "hikidashi open: tmux " + tc.subcommand; code != 1 || stdout != "" || !strings.HasPrefix(stderr, want) {
+				t.Errorf("open = %d, stdout %q, stderr %q, want 1 and prefix %q", code, stdout, stderr, want)
 			}
 		})
 	}
 }
 
-func TestOpenPreviewPrintsNextActionAndNotes(t *testing.T) {
+func TestOpenRejectsExtraArguments(t *testing.T) {
 	env := newOpenEnv(t)
-	d := env.seed(t)
-	testutil.WriteFile(t, d.NotesPath(), "本番は触らない\n")
 
-	code, stdout, stderr := invoke(commands, "", "open", "--preview", "api-3f2a9c1b/s1")
+	code, _, stderr := invoke(commands, "", "open", "api", "web")
 
-	if code != 0 || stderr != "" {
-		t.Fatalf("open --preview = %d, stderr %q, want 0", code, stderr)
+	if code != 2 || stderr != "Usage: hikidashi open [<drawer>]\n" {
+		t.Errorf("open = %d, stderr %q, want 2 and usage", code, stderr)
 	}
-	if want := "api  /src/api\n\n(next action not extracted yet)\n\n── notes.md ──\n本番は触らない\n"; stdout != want {
-		t.Errorf("stdout = %q, want %q", stdout, want)
-	}
-}
-
-func TestOpenPreviewRejectsInvalidKey(t *testing.T) {
-	env := newOpenEnv(t)
-	env.seed(t)
-
-	code, stdout, stderr := invoke(commands, "", "open", "--preview", "../../etc/passwd")
-
-	if code != 1 || stdout != "" {
-		t.Errorf("open --preview = %d, stdout %q, want 1 and no stdout", code, stdout)
-	}
-	if want := "hikidashi open: invalid key \"../../etc/passwd\"\n"; stderr != want {
-		t.Errorf("stderr = %q, want %q", stderr, want)
-	}
-}
-
-func TestOpenRejectsUnknownArguments(t *testing.T) {
-	for _, args := range [][]string{{"x"}, {"--preview"}, {"--preview", "a/b", "c"}} {
-		code, _, stderr := invoke(commands, "", append([]string{"open"}, args...)...)
-
-		if code != 2 || !strings.HasPrefix(stderr, "Usage: hikidashi open") {
-			t.Errorf("open %q = %d, stderr %q, want 2 and usage", args, code, stderr)
-		}
-	}
+	env.assertTmux(t)
 }
 
 func TestShellQuoteSurvivesShell(t *testing.T) {

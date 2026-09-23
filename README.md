@@ -10,7 +10,7 @@ hikidashi 本体（`hikidashi` コマンド）と、Claude Code の hooks を `h
 
 - git 2.31 以上
 - tmux（tmux の pane で動くセッションだけを記録する）
-- fzf（`hikidashi open` が一覧に使う）
+- fzf（`hikidashi open` が案件の一覧に使う）
 - GitHub CLI（`gh`。`hikidashi list`・`hikidashi show` が Open な Issue を数えるのに使う。`gh auth login` 済みであること）
 - Go
 - Claude Code
@@ -65,14 +65,25 @@ hikidashi remove api            # 名前（同名が複数あれば api-3f2a9c1b
 備忘録（`notes.md`）は空でなければ残り、同じリポジトリで `hikidashi add` すると戻る。
 tmux セッションは閉じないため、不要なら `tmux kill-session -t api-3f2a9c1b` で閉じる。
 
-## tmux から開く
+## 案件の tmux セッションを開く
 
-`hikidashi open` は、全引き出しのセッションを fzf に並べ、選んだセッションの pane へ移動する。
-tmux の中で動かす必要があるため、`tmux.conf` にポップアップで開くキーバインドを書く。
+`hikidashi open` は、案件の tmux セッションを開く。セッションが無ければ `hikidashi add` と同じ規則で作ってから開く。
+tmux の中からは今のクライアントをそのセッションへ切り替え、tmux の外からはそのセッションに attach する。
+
+```sh
+hikidashi open api      # 名前（同名が複数あれば api-3f2a9c1b のように指定する）
+hikidashi open          # 今いるリポジトリ（worktree・サブディレクトリを含む）の案件
+```
+
+引数を省いて Git 管理外で実行すると、全案件を fzf に並べ、選んだ案件のセッションを開く（プレビューは `hikidashi show <案件>`）。
+未登録のリポジトリで引数を省くと、何も開かずに `hikidashi add` を案内する。
+
+tmux の中から案件を選んで移るには、`tmux.conf` にポップアップで開くキーバインドを書く。
+`-d /` で Git 管理外から起動し、常に全案件の一覧を出す。
 
 ```tmux
-# prefix + h で一覧を開く。-E で、移動した後や Esc で閉じた後にポップアップも閉じる。
-bind-key h display-popup -E -w 80% -h 60% hikidashi open
+# prefix + h で案件の一覧を開く。-E で、切り替えた後や Esc で閉じた後にポップアップも閉じる。
+bind-key h display-popup -E -d / -w 80% -h 60% hikidashi open
 ```
 
 `hikidashi` と `fzf` は tmux サーバーの `PATH` から見える場所に置く。

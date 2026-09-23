@@ -23,88 +23,124 @@ func assertError(t *testing.T, err error, want string) {
 	}
 }
 
-func TestHasSessionMatchesExactName(t *testing.T) {
+func TestEnsureCreatesMissingSessionInDir(t *testing.T) {
+	fake := testutil.NewFakeTmux(t)
+
+	created, err := Ensure("api-3f2a9c1b", "/src/api")
+
+	if err != nil || !created {
+		t.Errorf("Ensure = %v, %v, want true, nil", created, err)
+	}
+	assertCalls(t, fake,
+		[]string{"has-session", "-t", "=api-3f2a9c1b"},
+		[]string{"new-session", "-d", "-s", "api-3f2a9c1b", "-c", "/src/api"})
+}
+
+func TestEnsureKeepsExistingSession(t *testing.T) {
 	fake := testutil.NewFakeTmux(t)
 	fake.AddSession(t, "api-3f2a9c1b")
 
-	// 呼び出し順を確かめるので、反復順の決まらない map ではなく slice で並べる。
-	for _, tc := range []struct {
-		name string
-		want bool
-	}{{"api-3f2a9c1b", true}, {"api", false}} {
-		got, err := HasSession(tc.name)
+	created, err := Ensure("api-3f2a9c1b", "/src/api")
 
-		if err != nil || got != tc.want {
-			t.Errorf("HasSession(%q) = %v, %v, want %v", tc.name, got, err, tc.want)
-		}
+	if err != nil || created {
+		t.Errorf("Ensure = %v, %v, want false, nil", created, err)
 	}
-	assertCalls(t, fake, []string{"has-session", "-t", "=api-3f2a9c1b"}, []string{"has-session", "-t", "=api"})
+	assertCalls(t, fake, []string{"has-session", "-t", "=api-3f2a9c1b"})
 }
 
-func TestHasSessionTreatsExitOneAsAbsent(t *testing.T) {
-	// サーバー未起動も exit 1 で終わる。
-	testutil.NewFakeTmux(t).Fail(t, "no server running on /tmp/tmux-1000/default", 1)
-
-	got, err := HasSession("api")
-
-	if err != nil || got {
-		t.Errorf("HasSession = %v, %v, want false, nil", got, err)
-	}
-}
-
-func TestHasSessionFailsOnOtherExit(t *testing.T) {
-	testutil.NewFakeTmux(t).Fail(t, "boom", 2)
-
-	_, err := HasSession("api")
-
-	assertError(t, err, "tmux has-session -t =api: exit status 2: boom")
-}
-
-func TestNewSessionStartsDetachedInDir(t *testing.T) {
+func TestEnsureMatchesExactName(t *testing.T) {
+	// = を付けないと、tmux は api で始まる api-3f2a9c1b にも一致させる。
 	fake := testutil.NewFakeTmux(t)
+	fake.AddSession(t, "api-3f2a9c1b")
 
-	if err := NewSession("api-3f2a9c1b", "/src/api"); err != nil {
+	created, err := Ensure("api", "/src/api")
+
+	if err != nil || !created {
+		t.Errorf("Ensure = %v, %v, want true, nil", created, err)
+	}
+	assertCalls(t, fake,
+		[]string{"has-session", "-t", "=api"},
+		[]string{"new-session", "-d", "-s", "api", "-c", "/src/api"})
+}
+
+func TestEnsureCreatesWhenServerIsNotRunning(t *testing.T) {
+	// サーバー未起動の has-session も exit 1 で終わり、new-session がサーバーを起動する。
+	fake := testutil.NewFakeTmux(t)
+	fake.Fail(t, "has-session", "no server running on /tmp/tmux-1000/default", 1)
+
+	created, err := Ensure("api", "/src/api")
+
+	if err != nil || !created {
+		t.Errorf("Ensure = %v, %v, want true, nil", created, err)
+	}
+	assertCalls(t, fake,
+		[]string{"has-session", "-t", "=api"},
+		[]string{"new-session", "-d", "-s", "api", "-c", "/src/api"})
+}
+
+func TestEnsureFailsWithStderr(t *testing.T) {
+	for name, tc := range map[string]struct {
+		code int
+		want string
+	}{
+		"has-session": {2, "tmux has-session -t =api: exit status 2: boom"},
+		"new-session": {1, "tmux new-session -d -s api -c /src/api: exit status 1: boom"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			testutil.NewFakeTmux(t).Fail(t, name, "boom", tc.code)
+
+			_, err := Ensure("api", "/src/api")
+
+			assertError(t, err, tc.want)
+		})
+	}
+}
+
+func TestSwitchClientMatchesExactSession(t *testing.T) {
+	fake := testutil.NewFakeTmux(t)
+	fake.AddSession(t, "api-3f2a9c1b")
+
+	if err := SwitchClient("api-3f2a9c1b"); err != nil {
 		t.Fatal(err)
 	}
 
-	assertCalls(t, fake, []string{"new-session", "-d", "-s", "api-3f2a9c1b", "-c", "/src/api"})
-	if ok, err := HasSession("api-3f2a9c1b"); err != nil || !ok {
-		t.Errorf("HasSession after NewSession = %v, %v, want true", ok, err)
-	}
-}
-
-func TestNewSessionFailsWithStderr(t *testing.T) {
-	testutil.NewFakeTmux(t).Fail(t, "duplicate session: api", 1)
-
-	err := NewSession("api", "/src/api")
-
-	assertError(t, err, "tmux new-session -d -s api -c /src/api: exit status 1: duplicate session: api")
-}
-
-func TestSwitchClientMovesToPane(t *testing.T) {
-	fake := testutil.NewFakeTmux(t)
-
-	if err := SwitchClient("%1"); err != nil {
-		t.Fatal(err)
-	}
-
-	assertCalls(t, fake, []string{"switch-client", "-t", "%1"})
+	assertCalls(t, fake, []string{"switch-client", "-t", "=api-3f2a9c1b"})
 }
 
 func TestSwitchClientFailsWithStderr(t *testing.T) {
-	testutil.NewFakeTmux(t).Fail(t, "can't find pane: %9", 1)
+	// 偽の tmux は、無いセッションへの switch-client を実物と同じく失敗させる。
+	testutil.NewFakeTmux(t)
 
-	err := SwitchClient("%9")
+	err := SwitchClient("api")
 
-	assertError(t, err, "tmux switch-client -t %9: exit status 1: can't find pane: %9")
+	assertError(t, err, "tmux switch-client -t =api: exit status 1: can't find session: api")
+}
+
+func TestAttachMatchesExactSession(t *testing.T) {
+	fake := testutil.NewFakeTmux(t)
+	fake.AddSession(t, "api-3f2a9c1b")
+
+	if err := Attach("api-3f2a9c1b"); err != nil {
+		t.Fatal(err)
+	}
+
+	assertCalls(t, fake, []string{"attach-session", "-t", "=api-3f2a9c1b"})
+}
+
+func TestAttachFails(t *testing.T) {
+	testutil.NewFakeTmux(t).Fail(t, "attach-session", "open terminal failed: not a terminal", 1)
+
+	err := Attach("api")
+
+	assertError(t, err, "tmux attach-session -t =api: exit status 1")
 }
 
 func TestRunFailsWhenTmuxCannotStart(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 
-	_, err := HasSession("api")
+	_, err := Ensure("api", "/src/api")
 
 	if err == nil {
-		t.Error("HasSession without tmux succeeded, want an error")
+		t.Error("Ensure without tmux succeeded, want an error")
 	}
 }

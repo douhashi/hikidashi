@@ -59,15 +59,12 @@ func add(stdout io.Writer) error {
 	}
 
 	name := d.TmuxSession()
-	exists, err := tmux.HasSession(name)
+	created, err := tmux.Ensure(name, d.Path)
 	if err != nil {
 		return err
 	}
 	status = "already exists"
-	if !exists {
-		if err := tmux.NewSession(name, d.Path); err != nil {
-			return err
-		}
+	if created {
 		status = "created"
 	}
 	_, err = fmt.Fprintf(stdout, "tmux session: %s (%s)\n", name, status)
