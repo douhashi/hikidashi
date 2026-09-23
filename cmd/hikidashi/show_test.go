@@ -94,7 +94,7 @@ func TestShowDetailPrintsSessionsAndNotes(t *testing.T) {
 	env.dead(t, api, "gone")
 	testutil.WriteFile(t, filepath.Join(api.Dir, "sessions", "w1.next.json"),
 		`{"summary":"API を直している","human_next":"権限を承認する","claude_next":"","blockers":["CI が落ちている"]}`)
-	testutil.WriteFile(t, api.NotesPath(), "# 案件メモ\n本番は触らない\n")
+	testutil.WriteFile(t, api.NotesPath(), "# プロジェクトメモ\n本番は触らない\n")
 	env.gh.OpenIssues(t, api.Path, 3)
 
 	// 端末でない stdout には色を付けない。
@@ -115,10 +115,10 @@ func TestShowDetailPrintsSessionsAndNotes(t *testing.T) {
 		"│ pane          %r1               │\n" +
 		"│ (next action not extracted yet) │\n" +
 		"╰─────────────────────────────────╯\n" +
-		"╭─ notes.md ─────╮\n" +
-		"│ # 案件メモ     │\n" +
-		"│ 本番は触らない │\n" +
-		"╰────────────────╯\n"
+		"╭─ notes.md ─────────╮\n" +
+		"│ # プロジェクトメモ │\n" +
+		"│ 本番は触らない     │\n" +
+		"╰────────────────────╯\n"
 	// slug でも、一意に決まるリポジトリ名でも引ける。
 	for _, key := range []string{"api-0123abcd", "api"} {
 		t.Run(key, func(t *testing.T) {

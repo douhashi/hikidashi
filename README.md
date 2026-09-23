@@ -29,7 +29,7 @@ hikidashi 本体（`hikidashi` コマンド）と、Claude Code の hooks を `h
 
 ### 前提
 
-- Linux
+- Linux または macOS
 - git 2.31 以上
 - tmux（tmux の pane で動くセッションだけを記録する）
 - fzf（`hikidashi open` がプロジェクトの一覧に使う）
