@@ -12,6 +12,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/table"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/douhashi/hikidashi/internal/drawer"
 	"github.com/douhashi/hikidashi/internal/github"
@@ -149,18 +150,39 @@ const labelWidth = len("generated_at") + 2
 // none は値が無いことを表す表示。
 const none = "-"
 
-// row はラベルと値の 1 行。値が無ければ none を目立たせずに出す。
-func row(label, value string, style lipgloss.Style) string {
+// row はラベルと値の行。値が無ければ none を目立たせずに出す。
+// inner（枠の中身の幅、0 は制限なし）が正なら値をラベルの右の列の中で折り返し、2 行目以降はラベルの列を空ける。
+func row(label, value string, style lipgloss.Style, inner int) string {
 	if value == "" {
 		value, style = none, muted
 	}
-	return muted.Render(fmt.Sprintf("%-*s", labelWidth, label)) + style.Render(render.OneLine(value))
+	lines := wrap(render.OneLine(value), inner-labelWidth)
+	for i, l := range lines {
+		prefix := strings.Repeat(" ", labelWidth)
+		if i == 0 {
+			prefix = muted.Render(fmt.Sprintf("%-*s", labelWidth, label))
+		}
+		lines[i] = prefix + style.Render(l)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// wrap は s を limit 桁で折り返した行を返す。limit が 1 未満なら折り返さない。
+func wrap(s string, limit int) []string {
+	return strings.Split(ansi.Wrap(s, limit, ""), "\n")
 }
 
 // Detail は key（slug、または一意に決まるリポジトリ名）の引き出しについて、引き出し（パス・slug・Issue の件数）、
 // セッションごと（実効の状態・放置時間・pane・次アクションの全項目）、備忘録をそれぞれ枠で区切った本文を返す。
+// width は出力先の幅で、正なら枠をその幅にして長い値を折り返し、0 なら枠を最長の行に合わせて折り返さない。
+// 値の列が 1 桁も取れないほど狭い width は 0 として扱う。
 // 引き出しは登録済みのものから引き、key からパスを組み立てない。Issue の件数は得られなくても本文を返す。
-func Detail(dataRoot, key string, now time.Time) (string, Issues, error) {
+func Detail(dataRoot, key string, now time.Time, width int) (string, Issues, error) {
+	if width-frameInset-labelWidth < 1 {
+		width = 0
+	}
+	inner := innerWidth(width)
+
 	d, ok, err := drawer.Find(dataRoot, key)
 	if err != nil {
 		return "", Issues{}, err
@@ -183,53 +205,64 @@ func Detail(dataRoot, key string, now time.Time) (string, Issues, error) {
 		issuesValue = strconv.Itoa(issues.Count) + " open"
 	}
 	blocks := []string{frame(strong.Render(render.OneLine(d.Name)), drawerColor, []string{
-		row("path", d.Path, plain),
-		row("slug", d.Slug(), muted),
-		row("issues", issuesValue, issuesStyle(issues)),
-	})}
+		row("path", d.Path, plain, inner),
+		row("slug", d.Slug(), muted, inner),
+		row("issues", issuesValue, issuesStyle(issues), inner),
+	}, width)}
 	if len(entries) == 0 {
 		blocks = append(blocks, muted.Render("(no sessions)"))
 	}
 	for _, e := range entries {
-		blocks = append(blocks, sessionFrame(e, now))
+		blocks = append(blocks, sessionFrame(e, now, width))
 	}
-	notesLines := strings.Split(strings.TrimSuffix(notes, "\n"), "\n")
-	for i, l := range notesLines {
-		notesLines[i] = render.OneLine(l)
+	var notesLines []string
+	for _, l := range strings.Split(strings.TrimSuffix(notes, "\n"), "\n") {
+		notesLines = append(notesLines, wrap(render.OneLine(l), inner)...)
 	}
-	blocks = append(blocks, frame("notes.md", lineColor, notesLines))
+	blocks = append(blocks, frame("notes.md", lineColor, notesLines, width))
 	return strings.Join(blocks, "\n") + "\n", issues, nil
 }
 
-// sessionFrame は 1 セッションの枠。枠の色と上辺の札で実効の状態を示し、札に放置時間を添える。
-func sessionFrame(e scan.Entry, now time.Time) string {
+// innerWidth は幅 width の枠の中身の幅。width が 0（制限なし）なら 0 を返す。
+func innerWidth(width int) int {
+	if width == 0 {
+		return 0
+	}
+	return width - frameInset
+}
+
+// sessionFrame は幅 width（0 は制限なし）の 1 セッションの枠。枠の色と上辺の札で実効の状態を示し、札に放置時間を添える。
+func sessionFrame(e scan.Entry, now time.Time, width int) string {
+	inner := innerWidth(width)
 	title := "session " + render.OneLine(e.Session.SessionID) + " " + badge(e.Session.State, render.Age(now.Sub(e.Since)))
-	lines := append([]string{row("pane", e.Session.TmuxPane, plain)}, nextRows(e.Next, e.HasNext)...)
-	return frame(title, stateColors[e.Session.State], lines)
+	lines := append([]string{row("pane", e.Session.TmuxPane, plain, inner)}, nextRows(e.Next, e.HasNext, inner)...)
+	return frame(title, stateColors[e.Session.State], lines, width)
 }
 
 // nextRows は次アクションの全項目を、sessions/<session_id>.next.json のフィールド名をラベルにした行にする。
-// ok が偽（未抽出）なら、その旨だけを返す。
-func nextRows(n session.Next, ok bool) []string {
+// ok が偽（未抽出）なら、その旨だけを返す。inner（枠の中身の幅、0 は制限なし）が正なら、その幅に折り返す。
+func nextRows(n session.Next, ok bool, inner int) []string {
 	if !ok {
-		return []string{muted.Render("(next action not extracted yet)")}
+		return []string{muted.Render(strings.Join(wrap("(next action not extracted yet)", inner), "\n"))}
 	}
-	rows := []string{row("summary", n.Summary, plain), row("human_next", n.HumanNext, plain), row("claude_next", n.ClaudeNext, plain)}
+	rows := []string{
+		row("summary", n.Summary, plain, inner), row("human_next", n.HumanNext, plain, inner), row("claude_next", n.ClaudeNext, plain, inner),
+	}
 	if len(n.Blockers) == 0 {
-		rows = append(rows, row("blockers", "", plain))
+		rows = append(rows, row("blockers", "", plain, inner))
 	}
 	for i, blocker := range n.Blockers {
 		label := ""
 		if i == 0 {
 			label = "blockers"
 		}
-		rows = append(rows, row(label, "- "+blocker, plain))
+		rows = append(rows, row(label, "- "+blocker, plain, inner))
 	}
 	generated := ""
 	if !n.GeneratedAt.IsZero() {
 		generated = n.GeneratedAt.Local().Format(time.DateTime)
 	}
-	return append(rows, row("generated_at", generated, muted))
+	return append(rows, row("generated_at", generated, muted, inner))
 }
 
 // openIssues は d のリポジトリのルートで、Open な Issue を数える。数えられなければ、どの引き出しかを理由に添える。

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/douhashi/hikidashi/internal/session"
 )
@@ -45,13 +46,21 @@ func badge(state session.State, age string) string {
 		Render(" " + strings.ToUpper(string(state)) + " " + age + " ")
 }
 
+// frameInset は枠の左右の線と余白の桁数。枠の中身の幅は、枠の幅からこれを引いたもの。
+const frameInset = 4
+
 // frame は lines を c の色の角丸の枠で囲み、上辺に title を埋め込む。
-// 幅は最長の行（または title）に合わせ、折り返さない。
-func frame(title string, c color.Color, lines []string) string {
+// width が 0 なら幅は最長の行（または title）に合わせる。正なら幅を width にし、収まらない title を切り詰める。
+// width が正のとき、lines は中身の幅（width - frameInset）に折り返してあること。
+func frame(title string, c color.Color, lines []string, width int) string {
 	border := lipgloss.RoundedBorder()
 	body := strings.Join(lines, "\n")
-	// 枠の幅は左右の線と余白を含む。上辺は「╭─ title ─…╮」で、title の後ろに線を 1 本以上残す。
-	width := max(lipgloss.Width(body)+4, lipgloss.Width(title)+6)
+	// 上辺は「╭─ title ─…╮」で、title の後ろに線を 1 本以上残す。
+	if width == 0 {
+		width = max(lipgloss.Width(body)+frameInset, lipgloss.Width(title)+6)
+	} else {
+		title = ansi.Truncate(title, width-6, "…")
+	}
 	line := lipgloss.NewStyle().Foreground(c)
 	top := line.Render(border.TopLeft+border.Top+" ") + title +
 		line.Render(" "+strings.Repeat(border.Top, width-lipgloss.Width(title)-5)+border.TopRight)

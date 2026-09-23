@@ -312,7 +312,7 @@ hook・extract・`hikidashi notes`・`hikidashi add`・引数なしの `hikidash
 
 ### `hikidashi show`
 
-- `hikidashi show <drawer>` は 1 つの引き出しの詳細を、引き出し・セッションごと・`notes.md` の角丸の枠に分けて出す。枠の上辺にタイトルを置き、幅は最長の行に合わせて折り返さない
+- `hikidashi show <drawer>` は 1 つの引き出しの詳細を、引き出し・セッションごと・`notes.md` の角丸の枠に分けて出す。枠の上辺にタイトルを置き、幅は出力先の幅（fzf のプレビューの `FZF_PREVIEW_COLUMNS`、無ければ端末の幅）いっぱいにして、収まらない値は値の列の中で折り返す（タイトルは切り詰める）。幅が得られない（パイプ等）・値の列が 1 桁も取れないときは、最長の行に合わせて折り返さない
 - 引き出しの枠（青）はタイトルが name で、`path`・`slug`・`issues`（`<N> open`、得られなければ `?`）の行を持つ
 - セッションの枠はタイトルが `session <session_id>` と状態の札（` WAITING 10m ` の形で放置時間を添える）で、枠と札の色が実効の状態を示す。`pane` と次アクションの全項目（`next.json` のフィールド名をラベルにする）の行を持つ
 - セッションは `waiting` → `idle` → `running`（人間が捌くべきものを上に）、同順位は放置の長い順に並べ、無ければ `(no sessions)` を出す。最後に `notes.md` の枠（暗い灰）に備忘録の本文を出す
