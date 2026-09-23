@@ -16,3 +16,6 @@
 
 # go build がルートに出すバイナリ
 /hikidashi
+
+# goreleaser の出力先
+/dist/

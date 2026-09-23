@@ -1,0 +1,63 @@
+name: Release
+
+# v* タグの push で、OS・arch 別のバイナリを GitHub Releases に公開する。
+# ビルドと公開は mise タスク（mise run release → .goreleaser.yaml）を SSoT とし、ここで二重定義しない。
+# 公開後に各 runner で成果物を落とし、hikidashi version がタグ名を出すことを照合する。
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      # 版はタグから Go のツールチェインが埋めるため、履歴とタグをすべて取る。
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup mise
+        uses: jdx/mise-action@v4
+
+      - name: Release
+        run: mise run release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # 公開した成果物がその OS・arch で起動し、タグ名を版として出すことを確かめる。
+  verify:
+    needs: release
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            asset: hikidashi_linux_amd64
+          - runner: ubuntu-24.04-arm
+            asset: hikidashi_linux_arm64
+          - runner: macos-latest
+            asset: hikidashi_darwin_arm64
+          - runner: macos-15-intel
+            asset: hikidashi_darwin_amd64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Download
+        run: gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --pattern "$ASSET"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ASSET: ${{ matrix.asset }}
+
+      - name: Verify version
+        run: |
+          chmod +x "$ASSET"
+          got="$("./$ASSET" version)"
+          echo "hikidashi version: $got"
+          if [ "$got" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::version is $got, want $GITHUB_REF_NAME"
+            exit 1
+          fi
+        env:
+          ASSET: ${{ matrix.asset }}

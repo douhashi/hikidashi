@@ -1,0 +1,24 @@
+# タグ（v*）の push で .github/workflows/release.yml が `mise run release` から使う。
+# 手元での確かめ方は docs/development/setup.md の「リリース」。
+version: 2
+
+builds:
+  - main: ./cmd/hikidashi
+    binary: hikidashi
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    # 版は Go のツールチェインがビルド情報に埋める VCS の版を使うため、-X では埋めない。
+    ldflags:
+      - -s -w
+
+archives:
+  # 生バイナリを配る。README の「導入」が curl 1 本で落とす前提。
+  - formats: [binary]
+    name_template: "{{ .Binary }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: checksums.txt

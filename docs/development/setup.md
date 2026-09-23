@@ -29,7 +29,9 @@ mise run setup   # git hooks を導入し、開発を始められる状態にす
 | `mise run lint:docs` | ドキュメントの書式契約の検査 |
 | `mise run lint:go` | Go の lint（整形の崩れを含む） |
 | `mise run test` | Go のテスト |
+| `mise run lint:release` | リリースの設定（`.goreleaser.yaml`）の検査 |
 | `mise run check` | フルチェック（品質タスクをすべて束ねる） |
+| `mise run release` | タグのビルドを GitHub Releases に公開（CI が実行する） |
 
 ## 何が検査されるか
 
@@ -81,3 +83,17 @@ CI は PR の変更範囲で実行内容を分ける。
 必須ステータスチェックには、どちらの分岐でも結果を返す `result` ジョブを指定する。
 
 書式契約はレビューの目視ではなく、**機械的に落とす**（規約を文章で定めるだけでは守られない）。
+
+## リリース
+
+`main` の最新コミットに `v` で始まるタグを打って push すると、`.github/workflows/release.yml` が公開する。
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+`mise run release`（GoReleaser）が linux・darwin × amd64・arm64 のバイナリと `checksums.txt` を Releases に載せる。
+続くジョブが 4 組の runner で成果物を落とし、`hikidashi version` がタグ名を出すことを照合する。
+
+公開せずに手元で確かめるときは `goreleaser release --snapshot --clean` を使う（出力は `dist/`）。
