@@ -23,19 +23,22 @@ import (
 func TestTableAlignsColumnsAndMarksUnknownIssues(t *testing.T) {
 	summaries := []Summary{
 		{Drawer: drawer.Drawer{Dir: "/data/drawers/api-3f2a9c1b", Name: "api"}, Issues: Issues{Count: 12}, Running: 1, Waiting: 2, Idle: 3},
+		{Drawer: drawer.Drawer{Dir: "/data/drawers/api-7e6d5c4b", Name: "api"}, Issues: Issues{Count: 4}},
 		{Drawer: drawer.Drawer{Dir: "/data/drawers/frontend-0a1b2c3d", Name: "frontend"}, Issues: Issues{Err: errors.New("no remote")}},
 		{Drawer: drawer.Drawer{Dir: "/data/drawers/x-00000000", Name: "x\x1b[31m"}},
 	}
 
 	got := ansi.Strip(Table(summaries))
 
-	want := "╭──────────┬───────────────────┬────────┬─────────┬─────────┬──────╮\n" +
-		"│ DRAWER   │ SLUG              │ ISSUES │ RUNNING │ WAITING │ IDLE │\n" +
-		"├──────────┼───────────────────┼────────┼─────────┼─────────┼──────┤\n" +
-		"│ api      │ api-3f2a9c1b      │     12 │       1 │       2 │    3 │\n" +
-		"│ frontend │ frontend-0a1b2c3d │      ? │       0 │       0 │    0 │\n" +
-		"│ x [31m   │ x-00000000        │      0 │       0 │       0 │    0 │\n" +
-		"╰──────────┴───────────────────┴────────┴─────────┴─────────┴──────╯"
+	// 同名の引き出しも 1 引き出し 1 行で出し、slug の列は持たない（見分けは hikidashi show の候補で行う）。
+	want := "╭──────────┬────────┬─────────┬─────────┬──────╮\n" +
+		"│ DRAWER   │ ISSUES │ RUNNING │ WAITING │ IDLE │\n" +
+		"├──────────┼────────┼─────────┼─────────┼──────┤\n" +
+		"│ api      │     12 │       1 │       2 │    3 │\n" +
+		"│ api      │      4 │       0 │       0 │    0 │\n" +
+		"│ frontend │      ? │       0 │       0 │    0 │\n" +
+		"│ x [31m   │      0 │       0 │       0 │    0 │\n" +
+		"╰──────────┴────────┴─────────┴─────────┴──────╯"
 	if got != want {
 		t.Errorf("Table =\n%s\nwant\n%s", got, want)
 	}

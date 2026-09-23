@@ -31,13 +31,13 @@ func TestListCountsStatesAndIssuesPerDrawer(t *testing.T) {
 		t.Errorf("list = %d, want 0", code)
 	}
 	// 端末でない stdout には色を付けない。
-	want := "╭──────────┬───────────────────┬────────┬─────────┬─────────┬──────╮\n" +
-		"│ DRAWER   │ SLUG              │ ISSUES │ RUNNING │ WAITING │ IDLE │\n" +
-		"├──────────┼───────────────────┼────────┼─────────┼─────────┼──────┤\n" +
-		"│ api      │ api-0123abcd      │      3 │       1 │       1 │    2 │\n" +
-		"│ frontend │ frontend-0123abcd │      ? │       0 │       0 │    0 │\n" +
-		"│ web      │ web-0123abcd      │      0 │       0 │       1 │    0 │\n" +
-		"╰──────────┴───────────────────┴────────┴─────────┴─────────┴──────╯\n"
+	want := "╭──────────┬────────┬─────────┬─────────┬──────╮\n" +
+		"│ DRAWER   │ ISSUES │ RUNNING │ WAITING │ IDLE │\n" +
+		"├──────────┼────────┼─────────┼─────────┼──────┤\n" +
+		"│ api      │      3 │       1 │       1 │    2 │\n" +
+		"│ frontend │      ? │       0 │       0 │    0 │\n" +
+		"│ web      │      0 │       0 │       1 │    0 │\n" +
+		"╰──────────┴────────┴─────────┴─────────┴──────╯\n"
 	if stdout != want {
 		t.Errorf("stdout =\n%s\nwant\n%s", stdout, want)
 	}
@@ -49,6 +49,30 @@ func TestListCountsStatesAndIssuesPerDrawer(t *testing.T) {
 	}
 	// 死んだ claude のセッションは数えず、ファイルも消える（open / status と同じ後始末）。
 	testutil.AssertEntries(t, filepath.Join(api.Dir, "sessions"), "i1.json", "i2.json", "r1.json", "w1.json")
+}
+
+func TestListShowsDrawersOfTheSameNameOnSeparateRowsInSlugOrder(t *testing.T) {
+	env := newShowEnv(t)
+	second := env.drawer(t, "api", "api-89abcdef")
+	first := env.drawer(t, "api", "api-0123abcd")
+	env.session(t, second, "w1", session.Waiting, time.Now())
+	env.gh.OpenIssues(t, first.Path, 3)
+	env.gh.OpenIssues(t, second.Path, 5)
+
+	code, stdout, stderr := invoke(commands, "", "list")
+
+	if code != 0 || stderr != "" {
+		t.Errorf("list = %d, stderr %q, want 0 and no stderr", code, stderr)
+	}
+	want := "╭────────┬────────┬─────────┬─────────┬──────╮\n" +
+		"│ DRAWER │ ISSUES │ RUNNING │ WAITING │ IDLE │\n" +
+		"├────────┼────────┼─────────┼─────────┼──────┤\n" +
+		"│ api    │      3 │       0 │       0 │    0 │\n" +
+		"│ api    │      5 │       0 │       1 │    0 │\n" +
+		"╰────────┴────────┴─────────┴─────────┴──────╯\n"
+	if stdout != want {
+		t.Errorf("stdout =\n%s\nwant\n%s", stdout, want)
+	}
 }
 
 func TestListWithoutDrawersSaysSo(t *testing.T) {

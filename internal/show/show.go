@@ -96,12 +96,12 @@ func summarize(d drawer.Drawer) (Summary, error) {
 // Table は summaries を 1 引き出し 1 行の罫線付きの表にする。件数は 1 件以上を状態ごとの色で示す。
 func Table(summaries []Summary) string {
 	t := table.New().Border(lipgloss.RoundedBorder()).BorderStyle(lipgloss.NewStyle().Foreground(lineColor)).
-		Headers("DRAWER", "SLUG", "ISSUES", "RUNNING", "WAITING", "IDLE").
+		Headers("DRAWER", "ISSUES", "RUNNING", "WAITING", "IDLE").
 		StyleFunc(func(row, col int) lipgloss.Style {
 			return cellStyle(summaries, row, col).Padding(0, 1).Align(cellAlign(col))
 		})
 	for _, s := range summaries {
-		t.Row(render.OneLine(s.Drawer.Name), render.OneLine(s.Drawer.Slug()), s.Issues.String(),
+		t.Row(render.OneLine(s.Drawer.Name), s.Issues.String(),
 			strconv.Itoa(s.Running), strconv.Itoa(s.Waiting), strconv.Itoa(s.Idle))
 	}
 	return t.String()
@@ -117,12 +117,10 @@ func cellStyle(summaries []Summary, row, col int) lipgloss.Style {
 	case 0:
 		return strong
 	case 1:
-		return muted
-	case 2:
 		return issuesStyle(s.Issues)
-	case 3:
+	case 2:
 		return count(s.Running, stateColors[session.Running])
-	case 4:
+	case 3:
 		return count(s.Waiting, stateColors[session.Waiting])
 	}
 	return count(s.Idle, stateColors[session.Idle])
@@ -130,7 +128,7 @@ func cellStyle(summaries []Summary, row, col int) lipgloss.Style {
 
 // cellAlign は col 列の寄せ。件数の列は右に寄せる。
 func cellAlign(col int) lipgloss.Position {
-	if col >= 2 {
+	if col >= 1 {
 		return lipgloss.Right
 	}
 	return lipgloss.Left
