@@ -21,10 +21,11 @@ var commands = []command{
 	{name: "add", summary: "register the current repository as a drawer and prepare its tmux session", run: runAdd},
 	{name: "extract", summary: "extract the next action of a session from its transcript (Stop hook)", run: runExtract},
 	{name: "hook", summary: "record the session state and inject notes from a Claude Code hook input", run: runHook},
+	{name: "list", summary: "print an overview of all drawers", run: runList},
 	{name: "notes", summary: "open the notes of the current drawer in $EDITOR", run: runNotes},
 	{name: "open", summary: "choose a session with fzf and switch to its tmux pane", run: runOpen},
 	{name: "remove", summary: "unregister a drawer (the current one if omitted), keeping its non-empty notes", run: runRemove},
-	{name: "show", summary: "print an overview of all drawers, or the details of one drawer", run: runShow},
+	{name: "show", summary: "print the details of a drawer (the current one if omitted)", run: runShow},
 	{name: "status", summary: "print the number of sessions waiting for input, for the tmux status bar", run: runStatus},
 }
 

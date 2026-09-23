@@ -11,7 +11,7 @@ hikidashi 本体（`hikidashi` コマンド）と、Claude Code の hooks を `h
 - git 2.31 以上
 - tmux（tmux の pane で動くセッションだけを記録する）
 - fzf（`hikidashi open` が一覧に使う）
-- GitHub CLI（`gh`。`hikidashi show` が Open な Issue を数えるのに使う。`gh auth login` 済みであること）
+- GitHub CLI（`gh`。`hikidashi list`・`hikidashi show` が Open な Issue を数えるのに使う。`gh auth login` 済みであること）
 - Go
 - Claude Code
 
@@ -93,11 +93,11 @@ set -g status-right '#(hikidashi status) %H:%M'
 
 ## 案件の状況を見る
 
-`hikidashi show` は、登録済みの全案件の概況を 1 案件 1 行で出す。
+`hikidashi list` は、登録済みの全案件の概況を 1 案件 1 行で出す。
 Open な Issue の件数と、状態ごとのセッションの件数が並ぶ。
 
 ```sh
-hikidashi show
+hikidashi list
 # api       api-3f2a9c1b       issues:3  running:1  waiting:1  idle:2
 # frontend  frontend-0a1b2c3d  issues:?  running:0  waiting:0  idle:0
 ```
@@ -107,6 +107,7 @@ hikidashi show
 
 `hikidashi show <案件>` は、その案件のセッションごとの状態・放置時間・pane・次アクションと、備忘録を出す。
 `<案件>` にはリポジトリ名か、同名の案件があるときは slug（`api-3f2a9c1b`）を指定する。
+`<案件>` を省くと、作業ディレクトリのリポジトリの案件を出す。
 
 ```sh
 hikidashi show api
@@ -121,7 +122,7 @@ Claude Code は `hikidashi` のコマンドを実行し、その出力をもと�
 
 ```text
 この案件を登録しといて      # hikidashi add
-案件の状況は？              # hikidashi show
+案件の状況は？              # hikidashi list
 api はどうなってる？        # hikidashi show api
 この案件の登録を外して      # 確認のあと hikidashi remove
 ```

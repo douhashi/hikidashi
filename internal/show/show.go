@@ -1,5 +1,5 @@
-// Package show は hikidashi show が出す、全引き出しの概況の行と、1 つの引き出しの詳細の本文を作る。
-// 形は docs/development/architecture.md の「UI」の「hikidashi show」を参照。
+// Package show は hikidashi list が出す全引き出しの概況の行と、hikidashi show が出す 1 つの引き出しの詳細の本文を作る。
+// 形は docs/development/architecture.md の「UI」の「hikidashi list」「hikidashi show」を参照。
 package show
 
 import (
