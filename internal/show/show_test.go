@@ -86,7 +86,7 @@ func TestTableKeepsNotesColumnWhenNarrow(t *testing.T) {
 	}
 }
 
-func TestTableLinesSplitHeaderAndRowsWithoutBottomBorder(t *testing.T) {
+func TestTableLinesSplitHeaderAndRowsWithoutOuterBorder(t *testing.T) {
 	summaries := []Summary{
 		{Drawer: drawer.Drawer{Dir: "/data/drawers/api-3f2a9c1b", Name: "api"}, Issues: Issues{Count: 12}, Running: 1, Note: "0123456789abcdef"},
 		{Drawer: drawer.Drawer{Dir: "/data/drawers/frontend-0a1b2c3d", Name: "frontend"}, Waiting: 2},
@@ -94,13 +94,51 @@ func TestTableLinesSplitHeaderAndRowsWithoutBottomBorder(t *testing.T) {
 
 	header, rows := TableLines(summaries, 60)
 
-	// 色と幅は Table と同じで、選べない見出しの 3 行と、summaries の順の 1 引き出し 1 行に分かれる。下の罫線は無い。
-	table := strings.Split(Table(summaries, 60), "\n")
-	if !slices.Equal(header, table[:3]) {
-		t.Errorf("header = %q, want %q", header, table[:3])
+	// 外枠は無く、選べない見出しの 2 行（見出し・区切り線）と、summaries の順の 1 引き出し 1 行に分かれる。
+	// 外枠が無い分、NOTES の列は Table より 2 桁広く、幅いっぱいまで使う。
+	got := make([]string, 0, len(header)+len(rows))
+	for _, l := range append(slices.Clone(header), rows...) {
+		got = append(got, ansi.Strip(l))
 	}
-	if !slices.Equal(rows, table[3:5]) {
-		t.Errorf("rows = %q, want %q", rows, table[3:5])
+	want := []string{
+		" DRAWER   │ ISSUES │ RUNNING │ WAITING │ IDLE │ NOTES       ",
+		"──────────┼────────┼─────────┼─────────┼──────┼─────────────",
+		" api      │     12 │       1 │       0 │    0 │ 0123456789… ",
+		" frontend │      0 │       0 │       2 │    0 │             ",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("TableLines =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	if len(header) != 2 {
+		t.Errorf("header has %d lines, want 2", len(header))
+	}
+	for i, l := range got {
+		if strings.ContainsAny(l, "╭╮╰╯├┤") || strings.HasPrefix(l, "│") || strings.HasSuffix(l, "│") {
+			t.Errorf("line %d has an outer border: %q", i, l)
+		}
+		if i == 1 {
+			if strings.Trim(l, "─┼") != "" {
+				t.Errorf("header separator = %q, want only ─ and ┼", l)
+			}
+		} else if !strings.Contains(l, "│") {
+			t.Errorf("line %d has no column separators: %q", i, l)
+		}
+	}
+}
+
+func TestTableKeepsOuterBorder(t *testing.T) {
+	summaries := []Summary{{Drawer: drawer.Drawer{Dir: "/data/drawers/api-3f2a9c1b", Name: "api"}}}
+
+	lines := strings.Split(ansi.Strip(Table(summaries, 60)), "\n")
+
+	// hikidashi list の表は外枠を持つ。
+	if !strings.HasPrefix(lines[0], "╭") || !strings.HasPrefix(lines[len(lines)-1], "╰") {
+		t.Errorf("Table =\n%s\nwant top and bottom borders", strings.Join(lines, "\n"))
+	}
+	for i, l := range lines[1 : len(lines)-1] {
+		if !strings.HasPrefix(l, "│") && !strings.HasPrefix(l, "├") || !strings.HasSuffix(l, "│") && !strings.HasSuffix(l, "┤") {
+			t.Errorf("line %d has no side borders: %q", i+1, l)
+		}
 	}
 }
 

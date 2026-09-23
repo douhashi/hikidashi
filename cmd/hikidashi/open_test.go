@@ -217,17 +217,16 @@ func TestOpenOutsideGitChoosesDrawerWithFzf(t *testing.T) {
 	env.gh.OpenIssues(t, api1.Path, 3)
 	env.gh.OpenIssues(t, api2.Path, 5)
 	// 同名の引き出しは、選んだ行の slug で後の方を引く。
-	t.Setenv("FAKE_FZF_SELECT", api2.Slug()+"\t5\t│ api      │      5 │")
+	t.Setenv("FAKE_FZF_SELECT", api2.Slug()+"\t5\t api      │      5 │")
 
 	// Issue の件数が得られない理由（frontend）は fzf の画面に上書きされるため出さず、表の ? だけで示す。
 	env.assertOpens(t, openCalls(api2, false, "switch-client"))
-	// 見出しの 3 行は slug と件数を持たず、各行は「slug TAB Issue の件数 TAB list の表の行」。下の罫線は選べる行にしないため無い。
-	want := "\t\t╭──────────┬────────┬─────────┬─────────┬──────┬────────────────╮\n" +
-		"\t\t│ DRAWER   │ ISSUES │ RUNNING │ WAITING │ IDLE │ NOTES          │\n" +
-		"\t\t├──────────┼────────┼─────────┼─────────┼──────┼────────────────┤\n" +
-		api1.Slug() + "\t3\t│ api      │      3 │       0 │       0 │    0 │                │\n" +
-		api2.Slug() + "\t5\t│ api      │      5 │       0 │       1 │    0 │ 本番は触らない │\n" +
-		front.Slug() + "\t?\t│ frontend │      ? │       0 │       0 │    0 │                │\n"
+	// 見出しの 2 行は slug と件数を持たず、各行は「slug TAB Issue の件数 TAB 外枠なしの list の表の行」。
+	want := "\t\t DRAWER   │ ISSUES │ RUNNING │ WAITING │ IDLE │ NOTES          \n" +
+		"\t\t──────────┼────────┼─────────┼─────────┼──────┼────────────────\n" +
+		api1.Slug() + "\t3\t api      │      3 │       0 │       0 │    0 │                \n" +
+		api2.Slug() + "\t5\t api      │      5 │       0 │       1 │    0 │ 本番は触らない \n" +
+		front.Slug() + "\t?\t frontend │      ? │       0 │       0 │    0 │                \n"
 	if got := ansi.Strip(env.fzfStdin(t)); got != want {
 		t.Errorf("fzf stdin =\n%s\nwant\n%s", got, want)
 	}
@@ -236,7 +235,7 @@ func TestOpenOutsideGitChoosesDrawerWithFzf(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantArgs := []string{
-		"--ansi", "--header-lines=3", "--delimiter=\t|│", "--with-nth=3..", "--nth=2", "--no-sort", "--layout=reverse",
+		"--ansi", "--header-lines=2", "--delimiter=\t|│", "--with-nth=3..", "--nth=1", "--no-sort", "--layout=reverse",
 		"--with-shell=sh -c", "--preview=" + shellQuote(exe) + " __preview {1} {2}", "--preview-window=down,50%",
 	}
 	if got := env.fzfArgs(t); !slices.Equal(got, wantArgs) {
