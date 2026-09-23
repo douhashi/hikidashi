@@ -51,7 +51,10 @@ flowchart LR
   X -- 書く --> A[(sessions/ID.next.json)]
   O[hikidashi open] -- 読む --> D
   O -- new-session / switch-client / attach-session --> TS
-  O -- fzf のプレビュー --> SH
+  O -- fzf のプレビュー --> PV[hikidashi __preview]
+  PV -- 読む --> S
+  PV -- 読む --> A
+  PV -- 読む --> N
   O -- 読む --> S
   N -- 読む --> O
   O -- gh repo view --> GH
@@ -78,7 +81,7 @@ flowchart LR
 | `hikidashi remove` | 人間・skill から呼んだ Claude Code が起動 | プロジェクトの登録を取り消す。空でない備忘録は残す |
 | `hikidashi hook` | hook から起動 | 登録済みの引き出しへの状態の記録、備忘録の注入 |
 | `hikidashi extract` | `Stop` の async hook から起動 | transcript の末尾から次アクションを抽出する |
-| `hikidashi open` | 人間が端末・tmux の `display-popup` から起動 | プロジェクトの tmux セッションを（無ければ作って）開く |
+| `hikidashi open` | 人間が端末・tmux の `display-popup` から起動 | プロジェクトの tmux セッションを（無ければ作って）開く。fzf のプレビューは隠しコマンド `hikidashi __preview` で描く |
 | `hikidashi status` | tmux の `status-right` から起動 | 入力待ちの件数を出す |
 | `hikidashi list` | 人間・skill から呼んだ Claude Code が起動 | 全プロジェクトの概況を出す |
 | `hikidashi show` | 人間・skill から呼んだ Claude Code が起動 | 1 プロジェクト（省略時は作業ディレクトリのプロジェクト）の詳細を出す |
@@ -303,8 +306,10 @@ hook・extract・`hikidashi notes`・`hikidashi add`・引数なしの `hikidash
 2. 引き出しの tmux セッションが無ければ、`hikidashi add` と同じ規則（`has-session` → `new-session`）で作る
 3. `$TMUX` が空でなければ `tmux switch-client -t =<name>` で今のクライアントを切り替え、空なら `tmux attach-session -t =<name>` で繋ぐ
 
-- fzf の一覧の各行は `hikidashi list` の表の行（列・色・名前の順を共有する）で、見出しの 3 行は選べない行として一覧の上に固定し、下の罫線は出さない。各行の先頭に fzf には見せない slug を持たせ、プレビューは `hikidashi show {1}` でそれを受け取る
+- fzf の一覧の各行は `hikidashi list` の表の行（列・色・名前の順を共有する）で、見出しの 3 行は選べない行として一覧の上に固定し、下の罫線は出さない。各行の先頭に fzf には見せない slug と Issue の件数（`ISSUES` 列と同じ値）を持たせ、プレビューは隠しコマンド `hikidashi __preview {1} {2}` でそれを受け取る
 - 絞り込みは表の名前のセルにだけ当て（`--nth`）、件数や NOTES の文字では当たらない。Issue の件数が得られない理由は fzf の画面に上書きされるため出さず、表の `?` だけで示す
+- プレビューは `hikidashi show` と同じ詳細を同じ幅と色の規則で出すが、Issue の件数は一覧で数えた値（`?` を含む）を使い `gh` を呼ばない。カーソルを動かすたびに数え直す待ち時間を省くため。件数が `?` でも理由は出さない
+- `__preview` は使い方にも補完にも出さない。引数が 2 個でない・件数が非負の整数でも `?` でもなければ exit 2、存在しない引き出しは exit 1 とする
 - プレビューは端末の幅によらず常に一覧の下に全幅で置く。表の NOTES は一覧の幅（fzf のカーソルとスクロールバーの 3 桁を除く）に収まるよう切り詰める
 - 一覧とプレビューの出力は fzf へのパイプで端末でないため、`CLICOLOR_FORCE=1` で一覧の表に色を付け、fzf にも渡してプレビューに色と枠を出させる。`NO_COLOR` があればどちらも色を付けない。JSON を読む `gh` には `CLICOLOR_FORCE=0` で色を付けさせない
 - Esc 等で何も選ばずに閉じたら何もせず exit 0 とする。登録済みの引き出しが無ければ fzf を出さずに `hikidashi add` を案内して exit 1 とする
@@ -334,7 +339,7 @@ hook・extract・`hikidashi notes`・`hikidashi add`・引数なしの `hikidash
 - 状態の件数・状態・放置時間は中断とバックグラウンドのタスクを反映した実効の値で、claude が終わったセッションは後始末して数えない
 - `<drawer>` は `hikidashi remove` と同じ規則で引き出しを決める（上記「`hikidashi remove`」）。名前が複数に当たれば候補の slug を stderr に出して exit 1 とする
 - 引数が無ければ作業ディレクトリの引き出しの詳細を、その slug を渡したときと同じに出す。Git 管理外なら `hikidashi list` を、未登録なら `hikidashi add` を stderr で案内して exit 1 とする
-- Open な Issue の件数は、リポジトリのルートで `gh repo view --json issues` を実行した `issues.totalCount`（Pull Request を含まない）とする。1 回 10 秒で打ち切る
+- Open な Issue の件数は、リポジトリのルートで `gh repo view --json issues` を実行した `issues.totalCount`（Pull Request を含まない）とする。1 回 10 秒で打ち切る。キャッシュは持たず、実行のたびに数える（`hikidashi open` のプレビューだけは一覧で数えた値を使う。上記「`hikidashi open`」）
 - 数えるリポジトリは `gh` の選択に従う（`gh repo set-default`、無ければリモート名 `upstream` → `github` → `origin` の順）。fork で `upstream` を持つと元のリポジトリの件数になるため、`gh repo set-default` で選び直す
 - 件数が得られない（GitHub のリモートが無い・`gh` が無い・認証切れ・打ち切り）ときは `?` とし、0 件と区別する。理由を stderr に出したうえで exit 0 とする
 - 存在しない引き出しは理由を stderr に出して exit 1、引数が 2 個以上なら exit 2 とする

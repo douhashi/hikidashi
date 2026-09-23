@@ -138,6 +138,23 @@ func TestShowDetailPrintsSessionsAndNotes(t *testing.T) {
 	testutil.AssertEntries(t, filepath.Join(api.Dir, "sessions"), "i1.json", "r1.json", "w1.json", "w1.next.json")
 }
 
+func TestShowCountsIssuesWithGhEachTime(t *testing.T) {
+	// 単体の show は件数を使い回さず、実行のたびにリポジトリのルートで gh に数えさせる。
+	env := newShowEnv(t)
+	api := env.drawer(t, "api", "api-0123abcd")
+	env.gh.OpenIssues(t, api.Path, 3)
+
+	code, stdout, _ := invoke(commands, "", "show", "api")
+
+	if code != 0 || !strings.Contains(stdout, "issues        3 open ") {
+		t.Errorf("show api = %d, stdout =\n%s\nwant 0 and 3 open", code, stdout)
+	}
+	// 呼び出しの引数と作業ディレクトリは internal/github のテストが確かめる。
+	if got := env.gh.Calls(t); len(got) != 1 {
+		t.Errorf("gh calls = %+v, want one", got)
+	}
+}
+
 func TestShowKeepsColorsWhenForced(t *testing.T) {
 	env := newShowEnv(t)
 	api := env.drawer(t, "api", "api-0123abcd")

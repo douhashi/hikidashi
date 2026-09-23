@@ -60,6 +60,9 @@ func run(cmds []command, args []string, stdin io.Reader, stdout, stderr io.Write
 	case "__complete":
 		// commands を参照するため表には載せず、使い方にも出さない。
 		return runComplete(cmds, args[1:], stdout, stderr)
+	case "__preview":
+		// hikidashi open の fzf だけが呼ぶため、表に載せず使い方にも補完にも出さない。
+		return runPreview(args[1:], stdout, stderr)
 	}
 
 	for _, c := range cmds {

@@ -56,7 +56,7 @@ func Summaries(dataRoot string) ([]Summary, error) {
 	issues := make([]Issues, len(drawers))
 	var wg sync.WaitGroup
 	for i, d := range drawers {
-		wg.Go(func() { issues[i] = openIssues(d) })
+		wg.Go(func() { issues[i] = OpenIssues(d) })
 	}
 	summaries := make([]Summary, len(drawers))
 	for i, d := range drawers {
@@ -235,8 +235,8 @@ const columnGap = 1
 // 値の列が 1 桁も取れないほど狭い width は 0 として扱う。
 // width が twoColumnWidth 以上でセッションがあれば、左にセッションの枠、右に引き出しと備忘録の枠を上揃えで並べ、
 // それ以外は上から引き出し・セッション・備忘録の順に積む。
-// 引き出しは登録済みのものから引き、key からパスを組み立てない。Issue の件数は得られなくても本文を返す。
-func Detail(dataRoot, key string, now time.Time, width int) (string, Issues, error) {
+// 引き出しは登録済みのものから引き、key からパスを組み立てない。Issue の件数は issues に引き出しを渡して得て、得られなくても本文を返す。
+func Detail(dataRoot, key string, issues func(drawer.Drawer) Issues, now time.Time, width int) (string, Issues, error) {
 	if width-frameInset-labelWidth < 1 {
 		width = 0
 	}
@@ -256,7 +256,7 @@ func Detail(dataRoot, key string, now time.Time, width int) (string, Issues, err
 	if err != nil {
 		return "", Issues{}, err
 	}
-	issues := openIssues(d)
+	count := issues(d)
 
 	if width >= twoColumnWidth && len(entries) > 0 {
 		// 割り切れない 1 桁は左の列に寄せる。
@@ -265,11 +265,11 @@ func Detail(dataRoot, key string, now time.Time, width int) (string, Issues, err
 		body := lipgloss.JoinHorizontal(lipgloss.Top,
 			sessionsBlock(entries, now, left),
 			strings.Repeat(" ", columnGap),
-			drawerFrame(d, issues, right)+"\n"+notesFrame(notes, right))
-		return body + "\n", issues, nil
+			drawerFrame(d, count, right)+"\n"+notesFrame(notes, right))
+		return body + "\n", count, nil
 	}
-	blocks := []string{drawerFrame(d, issues, width), sessionsBlock(entries, now, width), notesFrame(notes, width)}
-	return strings.Join(blocks, "\n") + "\n", issues, nil
+	blocks := []string{drawerFrame(d, count, width), sessionsBlock(entries, now, width), notesFrame(notes, width)}
+	return strings.Join(blocks, "\n") + "\n", count, nil
 }
 
 // drawerFrame は幅 width（0 は制限なし）の引き出しの枠。タイトルが name で、パス・slug・Issue の件数の行を持つ。
@@ -350,8 +350,8 @@ func nextRows(n session.Next, ok bool, inner int) []string {
 	return append(rows, row("generated_at", generated, muted, inner))
 }
 
-// openIssues は d のリポジトリのルートで、Open な Issue を数える。数えられなければ、どの引き出しかを理由に添える。
-func openIssues(d drawer.Drawer) Issues {
+// OpenIssues は d のリポジトリのルートで、gh で Open な Issue を数える。数えられなければ、どの引き出しかを理由に添える。
+func OpenIssues(d drawer.Drawer) Issues {
 	n, err := github.OpenIssues(context.Background(), d.Path)
 	if err != nil {
 		return Issues{Err: fmt.Errorf("%s: open issues unavailable: %w", d.Slug(), err)}

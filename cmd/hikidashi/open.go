@@ -89,13 +89,15 @@ func chooseDrawer(root string, width int, stderr io.Writer) (drawer.Drawer, bool
 	}
 
 	header, rows := show.TableLines(summaries, listTableWidth(width))
-	// 各行は「slug TAB 表の行」。見出しの行は slug を持たず、fzf が選べない行として一覧の上に固定する。
+	// 各行は「slug TAB Issue の件数 TAB 表の行」。件数はプレビューが gh で数え直さずに使い回す。
+	// 見出しの行は slug と件数を持たず、fzf が選べない行として一覧の上に固定する。
 	lines := make([]string, 0, len(header)+len(rows))
 	for _, h := range header {
-		lines = append(lines, "\t"+h)
+		lines = append(lines, "\t\t"+h)
 	}
 	for i, r := range rows {
-		lines = append(lines, summaries[i].Drawer.Slug()+"\t"+r)
+		s := summaries[i]
+		lines = append(lines, s.Drawer.Slug()+"\t"+s.Issues.String()+"\t"+r)
 	}
 	line, ok, err := choose(lines, len(header), exe, stderr)
 	if err != nil || !ok {
@@ -123,17 +125,18 @@ func listTableWidth(width int) int {
 }
 
 // choose は lines を fzf に渡し、選ばれた行を返す。先頭の headerLines 行は選べない見出しとして一覧の上に固定する。
-// 各行の先頭の列（slug）は見せず、プレビューの hikidashi show にだけ渡す。絞り込みは表の名前のセルにだけ当てる。
+// 各行の先頭の 2 列（slug と Issue の件数）は見せず、プレビューの hikidashi __preview にだけ渡す。絞り込みは表の名前のセルにだけ当てる。
 // プレビューは一覧の下に全幅で置く。Esc 等で何も選ばれなければ ok=false を返す。fzf の画面は端末（/dev/tty）と stderr に出る。
 func choose(lines []string, headerLines int, exe string, stderr io.Writer) (line string, ok bool, err error) {
 	cmd := exec.Command("fzf",
-		// 表の行の色を見せ、区切りの TAB と表の縦の罫線で列に分ける。1 列目は slug、2 列目は表の左の罫線より後ろの名前のセル。
-		"--ansi", fmt.Sprintf("--header-lines=%d", headerLines), "--delimiter=\t|│", "--with-nth=2..", "--nth=2",
+		// 表の行の色を見せ、区切りの TAB と表の縦の罫線で列に分ける。1 列目は slug、2 列目は件数で、どちらも見せない。
+		// --nth は --with-nth で残した列を数えるため、2 列目は表の左の罫線より後ろの名前のセル。
+		"--ansi", fmt.Sprintf("--header-lines=%d", headerLines), "--delimiter=\t|│", "--with-nth=3..", "--nth=2",
 		// 並び順どおりに、先頭の行を上に出す。
 		"--no-sort", "--layout=reverse",
 		// プレビューのコマンドの引用を、利用者のログインシェルによらず POSIX sh の規則に揃える。
 		"--with-shell=sh -c",
-		"--preview="+shellQuote(exe)+" show {1}", "--preview-window=down,50%",
+		"--preview="+shellQuote(exe)+" __preview {1} {2}", "--preview-window=down,50%",
 	)
 	// 一覧とプレビューの出力は fzf へのパイプで端末でないため、色を強制する。NO_COLOR が設定されていれば強制しない。
 	cmd.Env = os.Environ()
