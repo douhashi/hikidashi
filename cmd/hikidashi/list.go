@@ -17,7 +17,7 @@ func runList(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 	}
 	root, err := drawer.DefaultRoot()
 	if err == nil {
-		err = overview(root, colorWriter(stdout), stderr)
+		err = overview(root, outputWidth(stdout), colorWriter(stdout), stderr)
 	}
 	if err != nil {
 		report(stderr, fmt.Sprintf("hikidashi list: %v\n", err))
@@ -26,8 +26,8 @@ func runList(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// overview は全引き出しの概況を stdout に書く。登録済みの引き出しが無ければ、その旨を書く。
-func overview(root string, stdout, stderr io.Writer) error {
+// overview は全引き出しの概況を、幅 width（0 は制限なし）の表で stdout に書く。登録済みの引き出しが無ければ、その旨を書く。
+func overview(root string, width int, stdout, stderr io.Writer) error {
 	summaries, err := show.Summaries(root)
 	if err != nil {
 		return err
@@ -39,7 +39,7 @@ func overview(root string, stdout, stderr io.Writer) error {
 	for _, s := range summaries {
 		reportIssues(stderr, "list", s.Issues)
 	}
-	_, err = io.WriteString(stdout, show.Table(summaries)+"\n")
+	_, err = io.WriteString(stdout, show.Table(summaries, width)+"\n")
 	return err
 }
 

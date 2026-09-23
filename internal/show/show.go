@@ -35,11 +35,13 @@ func (i Issues) String() string {
 	return strconv.Itoa(i.Count)
 }
 
-// Summary は概況の表の 1 行に対応する、1 つの引き出しの Issue の件数と、実効の状態ごとのセッションの件数。
+// Summary は概況の表の 1 行に対応する、1 つの引き出しの Issue の件数と、実効の状態ごとのセッションの件数と、
+// 備忘録の最初の 1 行（無ければ空）。
 type Summary struct {
 	Drawer                 drawer.Drawer
 	Issues                 Issues
 	Running, Waiting, Idle int
+	Note                   string
 }
 
 // Summaries は dataRoot に登録済みの全引き出しの概況を、名前の順（同名は slug の順）に返す。
@@ -73,13 +75,20 @@ func Summaries(dataRoot string) ([]Summary, error) {
 	return summaries, nil
 }
 
-// summarize は d のセッションを実効の状態ごとに数える。
+// summarize は d のセッションを実効の状態ごとに数え、備忘録の最初の 1 行を読む。
 func summarize(d drawer.Drawer) (Summary, error) {
 	entries, err := scan.Drawer(d)
 	if err != nil {
 		return Summary{}, err
 	}
+	notes, ok, err := d.Notes()
+	if err != nil {
+		return Summary{}, err
+	}
 	s := Summary{Drawer: d}
+	if ok {
+		s.Note = firstLine(notes)
+	}
 	for _, e := range entries {
 		switch e.Session.State {
 		case session.Running:
@@ -93,16 +102,49 @@ func summarize(d drawer.Drawer) (Summary, error) {
 	return s, nil
 }
 
+// firstLine は備忘録の最初の空白でない行を、前後の空白を削って 1 行の表示にして返す。無ければ空を返す。
+// Markdown の記号（# や - ）は加工しない。
+func firstLine(notes string) string {
+	for l := range strings.Lines(notes) {
+		if l = strings.TrimSpace(l); l != "" {
+			return render.OneLine(l)
+		}
+	}
+	return ""
+}
+
+// notesHeader は概況の表の備忘録の列の見出し。列はこの幅より狭くしない。
+const notesHeader = "NOTES"
+
 // Table は summaries を 1 引き出し 1 行の罫線付きの表にする。件数は 1 件以上を状態ごとの色で示す。
-func Table(summaries []Summary) string {
+// width は出力先の幅で、正なら備忘録の列を表が width に収まるよう … で切り詰め（見出しの幅は残す）、0 なら切り詰めない。
+func Table(summaries []Summary, width int) string {
+	notes := make([]string, len(summaries))
+	limit := 0
+	if width > 0 {
+		// 備忘録の列を空にした表の幅（最も広い行の幅）から、見出しの幅を除いた残りの列と罫線の幅。
+		others := lipgloss.Width(summaryTable(summaries, notes)) - len(notesHeader)
+		limit = max(width-others, len(notesHeader))
+	}
+	for i, s := range summaries {
+		notes[i] = s.Note
+		if limit > 0 {
+			notes[i] = ansi.Truncate(s.Note, limit, "…")
+		}
+	}
+	return summaryTable(summaries, notes)
+}
+
+// summaryTable は summaries の各行の備忘録の列を notes にした表を返す。
+func summaryTable(summaries []Summary, notes []string) string {
 	t := table.New().Border(lipgloss.RoundedBorder()).BorderStyle(lipgloss.NewStyle().Foreground(lineColor)).
-		Headers("DRAWER", "ISSUES", "RUNNING", "WAITING", "IDLE").
+		Headers("DRAWER", "ISSUES", "RUNNING", "WAITING", "IDLE", notesHeader).
 		StyleFunc(func(row, col int) lipgloss.Style {
 			return cellStyle(summaries, row, col).Padding(0, 1).Align(cellAlign(col))
 		})
-	for _, s := range summaries {
+	for i, s := range summaries {
 		t.Row(render.OneLine(s.Drawer.Name), s.Issues.String(),
-			strconv.Itoa(s.Running), strconv.Itoa(s.Waiting), strconv.Itoa(s.Idle))
+			strconv.Itoa(s.Running), strconv.Itoa(s.Waiting), strconv.Itoa(s.Idle), notes[i])
 	}
 	return t.String()
 }
@@ -122,13 +164,15 @@ func cellStyle(summaries []Summary, row, col int) lipgloss.Style {
 		return count(s.Running, stateColors[session.Running])
 	case 3:
 		return count(s.Waiting, stateColors[session.Waiting])
+	case 4:
+		return count(s.Idle, stateColors[session.Idle])
 	}
-	return count(s.Idle, stateColors[session.Idle])
+	return plain
 }
 
-// cellAlign は col 列の寄せ。件数の列は右に寄せる。
+// cellAlign は col 列の寄せ。件数の列（ISSUES〜IDLE）は右に寄せる。
 func cellAlign(col int) lipgloss.Position {
-	if col >= 1 {
+	if col >= 1 && col <= 4 {
 		return lipgloss.Right
 	}
 	return lipgloss.Left

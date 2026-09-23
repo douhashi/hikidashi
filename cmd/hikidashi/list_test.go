@@ -15,7 +15,10 @@ func TestListCountsStatesAndIssuesPerDrawer(t *testing.T) {
 	now := time.Now()
 	web := env.drawer(t, "web", "web-0123abcd")
 	api := env.drawer(t, "api", "api-0123abcd")
-	env.drawer(t, "frontend", "frontend-0123abcd")
+	frontend := env.drawer(t, "frontend", "frontend-0123abcd")
+	// notes.md は api が先頭に空行のある本文、frontend が空白だけ、web が無し。
+	testutil.WriteFile(t, api.NotesPath(), "\n- 本番は触らない\n2 行目\n")
+	testutil.WriteFile(t, frontend.NotesPath(), " \n\t\n")
 	env.session(t, api, "r1", session.Running, now)
 	env.session(t, api, "w1", session.Waiting, now)
 	env.session(t, api, "i1", session.Idle, now)
@@ -31,13 +34,13 @@ func TestListCountsStatesAndIssuesPerDrawer(t *testing.T) {
 		t.Errorf("list = %d, want 0", code)
 	}
 	// 端末でない stdout には色を付けない。
-	want := "╭──────────┬────────┬─────────┬─────────┬──────╮\n" +
-		"│ DRAWER   │ ISSUES │ RUNNING │ WAITING │ IDLE │\n" +
-		"├──────────┼────────┼─────────┼─────────┼──────┤\n" +
-		"│ api      │      3 │       1 │       1 │    2 │\n" +
-		"│ frontend │      ? │       0 │       0 │    0 │\n" +
-		"│ web      │      0 │       0 │       1 │    0 │\n" +
-		"╰──────────┴────────┴─────────┴─────────┴──────╯\n"
+	want := "╭──────────┬────────┬─────────┬─────────┬──────┬──────────────────╮\n" +
+		"│ DRAWER   │ ISSUES │ RUNNING │ WAITING │ IDLE │ NOTES            │\n" +
+		"├──────────┼────────┼─────────┼─────────┼──────┼──────────────────┤\n" +
+		"│ api      │      3 │       1 │       1 │    2 │ - 本番は触らない │\n" +
+		"│ frontend │      ? │       0 │       0 │    0 │                  │\n" +
+		"│ web      │      0 │       0 │       1 │    0 │                  │\n" +
+		"╰──────────┴────────┴─────────┴─────────┴──────┴──────────────────╯\n"
 	if stdout != want {
 		t.Errorf("stdout =\n%s\nwant\n%s", stdout, want)
 	}
@@ -64,14 +67,31 @@ func TestListShowsDrawersOfTheSameNameOnSeparateRowsInSlugOrder(t *testing.T) {
 	if code != 0 || stderr != "" {
 		t.Errorf("list = %d, stderr %q, want 0 and no stderr", code, stderr)
 	}
-	want := "╭────────┬────────┬─────────┬─────────┬──────╮\n" +
-		"│ DRAWER │ ISSUES │ RUNNING │ WAITING │ IDLE │\n" +
-		"├────────┼────────┼─────────┼─────────┼──────┤\n" +
-		"│ api    │      3 │       0 │       0 │    0 │\n" +
-		"│ api    │      5 │       0 │       1 │    0 │\n" +
-		"╰────────┴────────┴─────────┴─────────┴──────╯\n"
+	want := "╭────────┬────────┬─────────┬─────────┬──────┬───────╮\n" +
+		"│ DRAWER │ ISSUES │ RUNNING │ WAITING │ IDLE │ NOTES │\n" +
+		"├────────┼────────┼─────────┼─────────┼──────┼───────┤\n" +
+		"│ api    │      3 │       0 │       0 │    0 │       │\n" +
+		"│ api    │      5 │       0 │       1 │    0 │       │\n" +
+		"╰────────┴────────┴─────────┴─────────┴──────┴───────╯\n"
 	if stdout != want {
 		t.Errorf("stdout =\n%s\nwant\n%s", stdout, want)
+	}
+}
+
+func TestListTruncatesNotesToTheOutputWidth(t *testing.T) {
+	env := newShowEnv(t)
+	api := env.drawer(t, "api", "api-0123abcd")
+	testutil.WriteFile(t, api.NotesPath(), strings.Repeat("本番は触らない。", 10)+"\n")
+	env.gh.OpenIssues(t, api.Path, 3)
+	t.Setenv("FZF_PREVIEW_COLUMNS", "60")
+
+	code, stdout, stderr := invoke(commands, "", "list")
+
+	if code != 0 || stderr != "" {
+		t.Errorf("list = %d, stderr %q, want 0 and no stderr", code, stderr)
+	}
+	if want := "│ api    │      3 │       0 │       0 │    0 │ 本番は触ら… │\n"; !strings.Contains(stdout, want) {
+		t.Errorf("stdout =\n%s\nwant a row %q", stdout, want)
 	}
 }
 
