@@ -222,9 +222,9 @@ func wrap(s string, limit int) []string {
 }
 
 // twoColumnWidth は、Detail がセッションの枠を左、引き出しと notes.md の枠を右に並べる出力先の最小の幅。
-// 列の間を除いて二分したとき、どちらの列でも値の列が 41 桁（全角 20 字）以上取れる幅とする。
+// どちらの列でも値の列が 41 桁（全角 20 字）以上取れる最小の幅とする。
 // これより狭いと次アクションの文が細かく折り返され、セッションの枠が縦に伸びて並べた意味が薄れる。
-const twoColumnWidth = 120
+const twoColumnWidth = 119
 
 // columnGap は 2 列の間の桁数。
 const columnGap = 1

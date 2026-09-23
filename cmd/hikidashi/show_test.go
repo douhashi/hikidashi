@@ -379,7 +379,7 @@ func assertFrameLines(t *testing.T, name string, lines []string, width int, blan
 }
 
 func TestShowPlacesSessionsBesideDrawerAndNotesWhenWide(t *testing.T) {
-	for _, width := range []int{120, 140} {
+	for _, width := range []int{119, 140} {
 		t.Run(strconv.Itoa(width), func(t *testing.T) {
 			api := longDetailEnv(t)
 			t.Setenv("FZF_PREVIEW_COLUMNS", strconv.Itoa(width))
@@ -424,24 +424,24 @@ func TestShowPlacesSessionsBesideDrawerAndNotesWhenWide(t *testing.T) {
 }
 
 func TestShowStacksFramesWhenNarrowOrWithoutSessions(t *testing.T) {
-	t.Run("119 wide", func(t *testing.T) {
+	t.Run("118 wide", func(t *testing.T) {
 		api := longDetailEnv(t)
-		t.Setenv("FZF_PREVIEW_COLUMNS", "119")
+		t.Setenv("FZF_PREVIEW_COLUMNS", "118")
 
 		_, stdout, _ := invoke(commands, "", "show", api.Slug())
 
 		lines := outputLines(stdout)
-		assertFrameLines(t, "stacked", lines, 119, false)
+		assertFrameLines(t, "stacked", lines, 118, false)
 		if got, want := frameTitles(lines), []string{"api", "session", "session", "notes.md"}; !slices.Equal(got, want) {
 			t.Errorf("titles = %q, want %q", got, want)
 		}
 	})
-	t.Run("120 wide without sessions", func(t *testing.T) {
+	t.Run("119 wide without sessions", func(t *testing.T) {
 		env := newShowEnv(t)
 		api := env.drawer(t, "api", "api-0123abcd")
 		testutil.WriteFile(t, api.NotesPath(), strings.Repeat("本番は触らない。", 20)+"\n")
 		env.gh.OpenIssues(t, api.Path, 1)
-		t.Setenv("FZF_PREVIEW_COLUMNS", "120")
+		t.Setenv("FZF_PREVIEW_COLUMNS", "119")
 
 		_, stdout, _ := invoke(commands, "", "show", api.Slug())
 
@@ -450,8 +450,8 @@ func TestShowStacksFramesWhenNarrowOrWithoutSessions(t *testing.T) {
 		if i < 0 {
 			t.Fatalf("stdout =\n%s\nwant (no sessions) on its own line", stdout)
 		}
-		assertFrameLines(t, "drawer", lines[:i], 120, false)
-		assertFrameLines(t, "notes", lines[i+1:], 120, false)
+		assertFrameLines(t, "drawer", lines[:i], 119, false)
+		assertFrameLines(t, "notes", lines[i+1:], 119, false)
 		if got, want := frameTitles(lines), []string{"api", "notes.md"}; !slices.Equal(got, want) {
 			t.Errorf("titles = %q, want %q", got, want)
 		}
