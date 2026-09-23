@@ -4,12 +4,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 	"unicode/utf8"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/douhashi/hikidashi/internal/drawer"
 	"github.com/douhashi/hikidashi/internal/session"
@@ -305,12 +308,7 @@ func TestShowFillsFzfPreviewColumns(t *testing.T) {
 		t.Errorf("show api = %d, stderr %q, want 0 and silent", code, stderr)
 	}
 	// 引き出し・セッション・notes.md のどの枠も、長い値を折り返して 50 桁に収まる。
-	for i, l := range strings.Split(strings.TrimSuffix(stdout, "\n"), "\n") {
-		last, _ := utf8.DecodeLastRuneInString(l)
-		if w := lipgloss.Width(l); w != 50 || !strings.ContainsRune("│╮╯", last) {
-			t.Errorf("line %d %q is %d wide ending with %q, want 50 wide ending with the border", i, l, w, last)
-		}
-	}
+	assertFrameLines(t, "stdout", outputLines(stdout), 50, false)
 }
 
 func TestShowIgnoresUnusableFzfPreviewColumns(t *testing.T) {
@@ -331,4 +329,131 @@ func TestShowIgnoresUnusableFzfPreviewColumns(t *testing.T) {
 			}
 		})
 	}
+}
+
+// longDetailEnv は、全角の長い値を持つセッション 2 つと長い備忘録を持つ引き出し api を登録して返す。
+func longDetailEnv(t *testing.T) drawer.Drawer {
+	t.Helper()
+	env := newShowEnv(t)
+	now := time.Now()
+	api := env.drawer(t, "api", "api-0123abcd")
+	env.session(t, api, "w1", session.Waiting, now.Add(-10*time.Minute))
+	env.session(t, api, "r1", session.Running, now.Add(-3*time.Hour))
+	testutil.WriteFile(t, filepath.Join(api.Dir, "sessions", "w1.next.json"),
+		`{"summary":"`+strings.Repeat("API のテストを直している ", 6)+`","human_next":"権限を承認する"}`)
+	testutil.WriteFile(t, api.NotesPath(), strings.Repeat("本番は触らない。", 20)+"\n")
+	env.gh.OpenIssues(t, api.Path, 1)
+	return api
+}
+
+// outputLines は stdout を行に分ける。
+func outputLines(stdout string) []string {
+	return strings.Split(strings.TrimSuffix(stdout, "\n"), "\n")
+}
+
+// frameTitles は、lines のうち枠の上辺の行について、タイトルの最初の語を上から順に返す。
+func frameTitles(lines []string) []string {
+	var titles []string
+	for _, l := range lines {
+		if strings.HasPrefix(l, "╭─ ") {
+			titles = append(titles, strings.Fields(l)[1])
+		}
+	}
+	return titles
+}
+
+// assertFrameLines は、各行が幅 width の枠の行（枠の線で始まり、枠の線で終わる）であることを確かめる。
+// blank が真なら空白だけの行も許す。
+func assertFrameLines(t *testing.T, name string, lines []string, width int, blank bool) {
+	t.Helper()
+	for i, l := range lines {
+		if blank && strings.TrimSpace(l) == "" && lipgloss.Width(l) == width {
+			continue
+		}
+		first, _ := utf8.DecodeRuneInString(l)
+		last, _ := utf8.DecodeLastRuneInString(l)
+		if w := lipgloss.Width(l); w != width || !strings.ContainsRune("│╭╰", first) || !strings.ContainsRune("│╮╯", last) {
+			t.Errorf("%s line %d %q is %d wide, want a %d wide frame line", name, i, l, w, width)
+		}
+	}
+}
+
+func TestShowPlacesSessionsBesideDrawerAndNotesWhenWide(t *testing.T) {
+	for _, width := range []int{119, 140} {
+		t.Run(strconv.Itoa(width), func(t *testing.T) {
+			api := longDetailEnv(t)
+			t.Setenv("FZF_PREVIEW_COLUMNS", strconv.Itoa(width))
+			// 色の制御文字が入っても、行の表示幅が width を超えないことを見る。
+			t.Setenv("CLICOLOR_FORCE", "1")
+			t.Setenv("NO_COLOR", "")
+
+			code, stdout, stderr := invoke(commands, "", "show", api.Slug())
+
+			if code != 0 || stderr != "" || !strings.Contains(stdout, "\x1b[") {
+				t.Fatalf("show = %d, stderr %q, want 0, silent and colored", code, stderr)
+			}
+			// 列の間は 1 桁で、割り切れない 1 桁は左の列に寄せる。
+			left, right := width/2, width-1-width/2
+			var lefts, gaps, rights []string
+			for i, l := range outputLines(stdout) {
+				if w := lipgloss.Width(l); w != width {
+					t.Errorf("line %d %q is %d wide, want %d", i, l, w, width)
+				}
+				plain := ansi.Strip(l)
+				lefts = append(lefts, ansi.Cut(plain, 0, left))
+				gaps = append(gaps, ansi.Cut(plain, left, left+1))
+				rights = append(rights, ansi.Cut(plain, left+1, width))
+			}
+			// 左はセッションの枠、右は引き出しの枠と notes.md の枠で、どちらも上揃え。短い側の下は空白で埋める。
+			assertFrameLines(t, "left", lefts, left, true)
+			assertFrameLines(t, "right", rights, right, true)
+			if got := strings.Join(gaps, ""); strings.TrimSpace(got) != "" {
+				t.Errorf("gap = %q, want spaces", got)
+			}
+			if got, want := frameTitles(lefts), []string{"session", "session"}; !slices.Equal(got, want) {
+				t.Errorf("left titles = %q, want %q", got, want)
+			}
+			if got, want := frameTitles(rights), []string{"api", "notes.md"}; !slices.Equal(got, want) {
+				t.Errorf("right titles = %q, want %q", got, want)
+			}
+			if !strings.HasPrefix(lefts[0], "╭─") || !strings.HasPrefix(rights[0], "╭─") {
+				t.Errorf("first line = %q | %q, want both columns to start at the top", lefts[0], rights[0])
+			}
+		})
+	}
+}
+
+func TestShowStacksFramesWhenNarrowOrWithoutSessions(t *testing.T) {
+	t.Run("118 wide", func(t *testing.T) {
+		api := longDetailEnv(t)
+		t.Setenv("FZF_PREVIEW_COLUMNS", "118")
+
+		_, stdout, _ := invoke(commands, "", "show", api.Slug())
+
+		lines := outputLines(stdout)
+		assertFrameLines(t, "stacked", lines, 118, false)
+		if got, want := frameTitles(lines), []string{"api", "session", "session", "notes.md"}; !slices.Equal(got, want) {
+			t.Errorf("titles = %q, want %q", got, want)
+		}
+	})
+	t.Run("119 wide without sessions", func(t *testing.T) {
+		env := newShowEnv(t)
+		api := env.drawer(t, "api", "api-0123abcd")
+		testutil.WriteFile(t, api.NotesPath(), strings.Repeat("本番は触らない。", 20)+"\n")
+		env.gh.OpenIssues(t, api.Path, 1)
+		t.Setenv("FZF_PREVIEW_COLUMNS", "119")
+
+		_, stdout, _ := invoke(commands, "", "show", api.Slug())
+
+		lines := outputLines(stdout)
+		i := slices.Index(lines, "(no sessions)")
+		if i < 0 {
+			t.Fatalf("stdout =\n%s\nwant (no sessions) on its own line", stdout)
+		}
+		assertFrameLines(t, "drawer", lines[:i], 119, false)
+		assertFrameLines(t, "notes", lines[i+1:], 119, false)
+		if got, want := frameTitles(lines), []string{"api", "notes.md"}; !slices.Equal(got, want) {
+			t.Errorf("titles = %q, want %q", got, want)
+		}
+	})
 }

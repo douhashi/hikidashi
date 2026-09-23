@@ -221,16 +221,25 @@ func wrap(s string, limit int) []string {
 	return strings.Split(ansi.Wrap(s, limit, ""), "\n")
 }
 
+// twoColumnWidth は、Detail がセッションの枠を左、引き出しと notes.md の枠を右に並べる出力先の最小の幅。
+// どちらの列でも値の列が 41 桁（全角 20 字）以上取れる最小の幅とする。
+// これより狭いと次アクションの文が細かく折り返され、セッションの枠が縦に伸びて並べた意味が薄れる。
+const twoColumnWidth = 119
+
+// columnGap は 2 列の間の桁数。
+const columnGap = 1
+
 // Detail は key（slug、または一意に決まるリポジトリ名）の引き出しについて、引き出し（パス・slug・Issue の件数）、
 // セッションごと（実効の状態・放置時間・pane・次アクションの全項目）、備忘録をそれぞれ枠で区切った本文を返す。
 // width は出力先の幅で、正なら枠をその幅にして長い値を折り返し、0 なら枠を最長の行に合わせて折り返さない。
 // 値の列が 1 桁も取れないほど狭い width は 0 として扱う。
+// width が twoColumnWidth 以上でセッションがあれば、左にセッションの枠、右に引き出しと備忘録の枠を上揃えで並べ、
+// それ以外は上から引き出し・セッション・備忘録の順に積む。
 // 引き出しは登録済みのものから引き、key からパスを組み立てない。Issue の件数は得られなくても本文を返す。
 func Detail(dataRoot, key string, now time.Time, width int) (string, Issues, error) {
 	if width-frameInset-labelWidth < 1 {
 		width = 0
 	}
-	inner := innerWidth(width)
 
 	d, ok, err := drawer.Find(dataRoot, key)
 	if err != nil {
@@ -249,27 +258,54 @@ func Detail(dataRoot, key string, now time.Time, width int) (string, Issues, err
 	}
 	issues := openIssues(d)
 
+	if width >= twoColumnWidth && len(entries) > 0 {
+		// 割り切れない 1 桁は左の列に寄せる。
+		left := (width - columnGap + 1) / 2
+		right := width - columnGap - left
+		body := lipgloss.JoinHorizontal(lipgloss.Top,
+			sessionsBlock(entries, now, left),
+			strings.Repeat(" ", columnGap),
+			drawerFrame(d, issues, right)+"\n"+notesFrame(notes, right))
+		return body + "\n", issues, nil
+	}
+	blocks := []string{drawerFrame(d, issues, width), sessionsBlock(entries, now, width), notesFrame(notes, width)}
+	return strings.Join(blocks, "\n") + "\n", issues, nil
+}
+
+// drawerFrame は幅 width（0 は制限なし）の引き出しの枠。タイトルが name で、パス・slug・Issue の件数の行を持つ。
+func drawerFrame(d drawer.Drawer, issues Issues, width int) string {
+	inner := innerWidth(width)
 	issuesValue := "?"
 	if issues.Err == nil {
 		issuesValue = strconv.Itoa(issues.Count) + " open"
 	}
-	blocks := []string{frame(strong.Render(render.OneLine(d.Name)), drawerColor, []string{
+	return frame(strong.Render(render.OneLine(d.Name)), drawerColor, []string{
 		row("path", d.Path, plain, inner),
 		row("slug", d.Slug(), muted, inner),
 		row("issues", issuesValue, issuesStyle(issues), inner),
-	}, width)}
+	}, width)
+}
+
+// sessionsBlock は幅 width（0 は制限なし）のセッションの枠を entries の順に積む。無ければ (no sessions) を返す。
+func sessionsBlock(entries []scan.Entry, now time.Time, width int) string {
 	if len(entries) == 0 {
-		blocks = append(blocks, muted.Render("(no sessions)"))
+		return muted.Render("(no sessions)")
 	}
-	for _, e := range entries {
-		blocks = append(blocks, sessionFrame(e, now, width))
+	frames := make([]string, len(entries))
+	for i, e := range entries {
+		frames[i] = sessionFrame(e, now, width)
 	}
-	var notesLines []string
+	return strings.Join(frames, "\n")
+}
+
+// notesFrame は幅 width（0 は制限なし）の備忘録の枠。本文の各行をその幅に折り返す。
+func notesFrame(notes string, width int) string {
+	inner := innerWidth(width)
+	var lines []string
 	for _, l := range strings.Split(strings.TrimSuffix(notes, "\n"), "\n") {
-		notesLines = append(notesLines, wrap(render.OneLine(l), inner)...)
+		lines = append(lines, wrap(render.OneLine(l), inner)...)
 	}
-	blocks = append(blocks, frame("notes.md", lineColor, notesLines, width))
-	return strings.Join(blocks, "\n") + "\n", issues, nil
+	return frame("notes.md", lineColor, lines, width)
 }
 
 // innerWidth は幅 width の枠の中身の幅。width が 0（制限なし）なら 0 を返す。
