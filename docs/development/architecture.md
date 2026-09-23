@@ -294,7 +294,7 @@ hook・extract・`hikidashi notes`・`hikidashi add`・引数なしの `hikidash
 2. 引き出しの tmux セッションが無ければ、`hikidashi add` と同じ規則（`has-session` → `new-session`）で作る
 3. `$TMUX` が空でなければ `tmux switch-client -t =<name>` で今のクライアントを切り替え、空なら `tmux attach-session -t =<name>` で繋ぐ
 
-- fzf の一覧は 1 引き出し 1 行で、名前の順（同名は slug の順）に `<name>  <path>` を出す。各行の先頭に fzf には見せない slug を持たせ、プレビューは `hikidashi show {1}` でそれを受け取る
+- fzf の一覧は 1 引き出し 1 行で、名前の順（同名は slug の順）に `<name>  <path>` を出す。`<path>` はホーム配下ならホームを `~` に縮める（案件を見分ける末尾が fzf の幅で切られないため）。`hikidashi show` の `path` は絶対パスのまま。各行の先頭に fzf には見せない slug を持たせ、プレビューは `hikidashi show {1}` でそれを受け取る
 - プレビューの出力は fzf へのパイプで端末でないため、fzf に `CLICOLOR_FORCE=1` を渡して色と枠を出させる。`NO_COLOR` があれば渡さない。JSON を読む `gh` には `CLICOLOR_FORCE=0` で色を付けさせない
 - Esc 等で何も選ばずに閉じたら何もせず exit 0 とする。登録済みの引き出しが無ければ fzf を出さずに `hikidashi add` を案内して exit 1 とする
 - Git 管理下で未登録なら、何も開かずに `hikidashi add` を案内して exit 1 とする

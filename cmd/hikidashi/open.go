@@ -82,12 +82,16 @@ func chooseDrawer(root string, stderr io.Writer) (drawer.Drawer, bool, error) {
 		return drawer.Drawer{}, false, notRegistered("no drawers registered")
 	}
 	drawer.SortByName(drawers)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return drawer.Drawer{}, false, err
+	}
 	exe, err := os.Executable()
 	if err != nil {
 		return drawer.Drawer{}, false, err
 	}
 
-	line, ok, err := choose(drawerLines(drawers), exe, stderr)
+	line, ok, err := choose(drawerLines(drawers, home), exe, stderr)
 	if err != nil || !ok {
 		return drawer.Drawer{}, false, err
 	}
@@ -100,18 +104,33 @@ func chooseDrawer(root string, stderr io.Writer) (drawer.Drawer, bool, error) {
 	return drawer.Drawer{}, false, fmt.Errorf("unexpected selection %q", line)
 }
 
-// drawerLines は drawers を 1 引き出し 1 行にする。行は「slug TAB 名前  パス」で、名前の列は幅を揃える。
+// drawerLines は drawers を 1 引き出し 1 行にする。行は「slug TAB 名前  パス（ホーム配下は ~ 始まり）」で、名前の列は幅を揃える。
 // fzf には TAB より後ろだけを見せ、slug はプレビューと選択に使う。
-func drawerLines(drawers []drawer.Drawer) []string {
+func drawerLines(drawers []drawer.Drawer, home string) []string {
 	width := 0
 	for _, d := range drawers {
 		width = max(width, utf8.RuneCountInString(render.OneLine(d.Name)))
 	}
 	lines := make([]string, 0, len(drawers))
 	for _, d := range drawers {
-		lines = append(lines, fmt.Sprintf("%s\t%-*s  %s", d.Slug(), width, render.OneLine(d.Name), render.OneLine(d.Path)))
+		lines = append(lines, fmt.Sprintf("%s\t%-*s  %s", d.Slug(), width, render.OneLine(d.Name), render.OneLine(tildePath(d.Path, home))))
 	}
 	return lines
+}
+
+// tildePath は home 配下の path の home を ~ に縮める。案件を見分ける末尾が fzf の幅で切られにくくするため。
+// home の外（home と前方一致するだけの兄弟を含む）や、home が / のときはそのまま返す。
+func tildePath(path, home string) string {
+	home = strings.TrimSuffix(home, "/")
+	switch {
+	case home == "":
+		return path
+	case path == home:
+		return "~"
+	case strings.HasPrefix(path, home+"/"):
+		return "~" + strings.TrimPrefix(path, home)
+	}
+	return path
 }
 
 // choose は lines を fzf に渡し、選ばれた行を返す。先頭の列（slug）は見せず、プレビューの hikidashi show にだけ渡す。

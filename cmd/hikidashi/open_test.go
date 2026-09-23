@@ -50,7 +50,13 @@ func writeFake(t *testing.T, dir, name, script string) {
 // drawer は slug の引き出しを、name のリポジトリのルート（/src/<slug>）とともに登録して返す。
 func (e openEnv) drawer(t *testing.T, name, slug string) drawer.Drawer {
 	t.Helper()
-	d := drawer.Drawer{Dir: filepath.Join(e.dataRoot, "drawers", slug), Path: "/src/" + slug, Name: name}
+	return e.drawerAt(t, name, slug, "/src/"+slug)
+}
+
+// drawerAt は slug の引き出しを、name のリポジトリのルート path とともに登録して返す。
+func (e openEnv) drawerAt(t *testing.T, name, slug, path string) drawer.Drawer {
+	t.Helper()
+	d := drawer.Drawer{Dir: filepath.Join(e.dataRoot, "drawers", slug), Path: path, Name: name}
 	if err := d.Register(); err != nil {
 		t.Fatal(err)
 	}
@@ -207,13 +213,16 @@ func (e openEnv) outsideGit(t *testing.T) (front, api1, api2 drawer.Drawer) {
 func TestOpenOutsideGitChoosesDrawerWithFzf(t *testing.T) {
 	env := newOpenEnv(t)
 	front, api1, api2 := env.outsideGit(t)
-	t.Setenv("FAKE_FZF_SELECT", api2.Slug()+"\tapi       /src/api-22222222")
+	// ホーム配下の引き出しは、パスのホームを ~ に縮めて出す。選択は slug で引くため、縮めても同じ引き出しが開く。
+	work := env.drawerAt(t, "work", "work-33333333", filepath.Join(filepath.Dir(env.dataRoot), "src", "work"))
+	t.Setenv("FAKE_FZF_SELECT", work.Slug()+"\twork      ~/src/work")
 
-	env.assertOpens(t, openCalls(api2, false, "switch-client"))
+	env.assertOpens(t, openCalls(work, false, "switch-client"))
 	stdin := testutil.ReadFile(t, filepath.Join(env.dir, "fzf.stdin"))
 	want := api1.Slug() + "\tapi       /src/api-11111111\n" +
 		api2.Slug() + "\tapi       /src/api-22222222\n" +
-		front.Slug() + "\tfrontend  /src/0-frontend-0123abcd\n"
+		front.Slug() + "\tfrontend  /src/0-frontend-0123abcd\n" +
+		work.Slug() + "\twork      ~/src/work\n"
 	if stdin != want {
 		t.Errorf("fzf stdin = %q, want %q", stdin, want)
 	}
@@ -227,6 +236,23 @@ func TestOpenOutsideGitChoosesDrawerWithFzf(t *testing.T) {
 	}
 	if got := env.fzfArgs(t); !slices.Equal(got, wantArgs) {
 		t.Errorf("fzf args = %q, want %q", got, wantArgs)
+	}
+}
+
+func TestTildePath(t *testing.T) {
+	for name, tc := range map[string]struct{ path, home, want string }{
+		"under home":             {"/home/a/x", "/home/a", "~/x"},
+		"home itself":            {"/home/a", "/home/a", "~"},
+		"outside home":           {"/src/x", "/home/a", "/src/x"},
+		"sibling sharing prefix": {"/home/ab", "/home/a", "/home/ab"},
+		"home with trailing /":   {"/home/a/x", "/home/a/", "~/x"},
+		"home is root":           {"/x", "/", "/x"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := tildePath(tc.path, tc.home); got != tc.want {
+				t.Errorf("tildePath(%q, %q) = %q, want %q", tc.path, tc.home, got, tc.want)
+			}
+		})
 	}
 }
 
