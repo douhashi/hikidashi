@@ -8,7 +8,7 @@ import (
 	"github.com/douhashi/hikidashi/internal/drawer"
 )
 
-// runRemove は hikidashi remove の入口。指定の案件（無ければ作業ディレクトリの案件）の登録を取り消す。
+// runRemove は hikidashi remove の入口。指定のプロジェクト（無ければ作業ディレクトリのプロジェクト）の登録を取り消す。
 // 引数が 2 個以上なら exit 2、Git 管理外・未登録・曖昧な名前・I/O の失敗は exit 1 とする。tmux には触れない。
 func runRemove(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 	if len(args) > 1 {

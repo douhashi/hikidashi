@@ -15,7 +15,7 @@ run = ["lefthook install"]
 
 [tasks.install]
 description = "開発中の hikidashi を ~/.local/bin に入れる（hooks が PATH で呼ぶ版）"
-# mise の GOBIN は Go を pin したディレクトリでしか PATH に入らず案件外の hooks から見えないため、~/.local/bin に入れる。
+# mise の GOBIN は Go を pin したディレクトリでしか PATH に入らずプロジェクト外の hooks から見えないため、~/.local/bin に入れる。
 run = ['GOBIN="$HOME/.local/bin" go install ./cmd/hikidashi']
 
 [tasks."lint:docs"]
