@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -13,6 +12,7 @@ import (
 	"github.com/douhashi/hikidashi/internal/drawer"
 	"github.com/douhashi/hikidashi/internal/open"
 	"github.com/douhashi/hikidashi/internal/scan"
+	"github.com/douhashi/hikidashi/internal/tmux"
 )
 
 // openUsage は hikidashi open の使い方。--preview は fzf のプレビューから呼ばれる。
@@ -66,11 +66,7 @@ func switchToChosen(stderr io.Writer) error {
 	if !ok {
 		return fmt.Errorf("unexpected selection %q", line)
 	}
-	pane := e.Session.TmuxPane
-	if out, err := exec.Command("tmux", "switch-client", "-t", pane).CombinedOutput(); err != nil {
-		return fmt.Errorf("tmux switch-client -t %s: %w: %s", pane, err, bytes.TrimSpace(out))
-	}
-	return nil
+	return tmux.SwitchClient(e.Session.TmuxPane)
 }
 
 // choose は lines を fzf に渡し、選ばれた行を返す。隠しキー（先頭の列）は見せず、プレビューにだけ渡す。

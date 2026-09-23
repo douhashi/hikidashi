@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 	"unicode"
@@ -47,9 +46,9 @@ func Selected(entries []scan.Entry, line string) (scan.Entry, bool) {
 	return scan.Entry{}, false
 }
 
-// key はエントリの隠しキー `<slug>/<session_id>` を返す。slug は引き出しのディレクトリ名。
+// key はエントリの隠しキー `<slug>/<session_id>` を返す。
 func key(e scan.Entry) string {
-	return filepath.Base(e.Drawer.Dir) + "/" + e.Session.SessionID
+	return e.Drawer.Slug() + "/" + e.Session.SessionID
 }
 
 // nextAction は一覧に出す次アクション。人間の次アクション、無ければ要約、未抽出なら none とする。
@@ -119,14 +118,14 @@ func Preview(dataRoot, k string) (string, error) {
 	return b.String(), nil
 }
 
-// find は dataRoot に登録済みの引き出しから、ディレクトリ名が slug のものを返す。
+// find は dataRoot に登録済みの引き出しから、slug が一致するものを返す。
 func find(dataRoot, slug string) (drawer.Drawer, error) {
 	drawers, err := drawer.List(dataRoot)
 	if err != nil {
 		return drawer.Drawer{}, err
 	}
 	for _, d := range drawers {
-		if filepath.Base(d.Dir) == slug {
+		if d.Slug() == slug {
 			return d, nil
 		}
 	}

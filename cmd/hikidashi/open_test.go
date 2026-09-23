@@ -15,11 +15,11 @@ import (
 )
 
 // openEnv は fzf と tmux を偽物に差し替え、tmux の中から open を起動したように整える。
-// 偽物は受け取った引数と標準入力を dir に書き残す。偽の fzf は FAKE_FZF_SELECT を選んだ行として返し、
-// FAKE_FZF_EXIT で終わる。偽の tmux は FAKE_TMUX_EXIT で終わる。
+// 偽の fzf は受け取った引数と標準入力を dir に書き残し、FAKE_FZF_SELECT を選んだ行として返して FAKE_FZF_EXIT で終わる。
 type openEnv struct {
 	dir      string
 	dataRoot string
+	tmux     *testutil.FakeTmux
 }
 
 func newOpenEnv(t *testing.T) openEnv {
@@ -30,15 +30,12 @@ func newOpenEnv(t *testing.T) openEnv {
 	t.Setenv("FAKE_DIR", dir)
 	t.Setenv("FAKE_FZF_SELECT", "")
 	t.Setenv("FAKE_FZF_EXIT", "0")
-	t.Setenv("FAKE_TMUX_EXIT", "0")
 	writeFake(t, dir, "fzf", `printf '%s\n' "$@" > "$FAKE_DIR/fzf.args"
 cat > "$FAKE_DIR/fzf.stdin"
 if [ "$FAKE_FZF_EXIT" != 0 ]; then exit "$FAKE_FZF_EXIT"; fi
 printf '%s\n' "$FAKE_FZF_SELECT"`)
-	writeFake(t, dir, "tmux", `printf '%s\n' "$@" > "$FAKE_DIR/tmux.args"
-if [ "$FAKE_TMUX_EXIT" != 0 ]; then echo "can't find pane: %9" >&2; exit "$FAKE_TMUX_EXIT"; fi`)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	return openEnv{dir: dir, dataRoot: dataRoot}
+	return openEnv{dir: dir, dataRoot: dataRoot, tmux: testutil.NewFakeTmux(t)}
 }
 
 func writeFake(t *testing.T, dir, name, script string) {
@@ -48,10 +45,10 @@ func writeFake(t *testing.T, dir, name, script string) {
 	}
 }
 
-// args は偽の name が受け取った引数を返す。起動されていなければ nil を返す。
-func (e openEnv) args(t *testing.T, name string) []string {
+// fzfArgs は偽の fzf が受け取った引数を返す。
+func (e openEnv) fzfArgs(t *testing.T) []string {
 	t.Helper()
-	path := filepath.Join(e.dir, name+".args")
+	path := filepath.Join(e.dir, "fzf.args")
 	if _, err := os.Stat(path); err != nil {
 		return nil
 	}
@@ -89,8 +86,8 @@ func TestOpenSwitchesToSelectedPane(t *testing.T) {
 	if code != 0 || stdout != "" || stderr != "" {
 		t.Fatalf("open = %d, stdout %q, stderr %q, want 0 and silent", code, stdout, stderr)
 	}
-	if got, want := env.args(t, "tmux"), []string{"switch-client", "-t", "%1"}; !slices.Equal(got, want) {
-		t.Errorf("tmux args = %q, want %q", got, want)
+	if got, want := env.tmux.Calls(t), [][]string{{"switch-client", "-t", "%1"}}; !slices.EqualFunc(got, want, slices.Equal) {
+		t.Errorf("tmux calls = %q, want %q", got, want)
 	}
 	stdin := testutil.ReadFile(t, filepath.Join(env.dir, "fzf.stdin"))
 	if want := "api-3f2a9c1b/s2\tapi  waiting  10m  -\napi-3f2a9c1b/s1\tapi  idle     10m  -\n"; stdin != want {
@@ -104,7 +101,7 @@ func TestOpenSwitchesToSelectedPane(t *testing.T) {
 		"--delimiter=\t", "--with-nth=2..", "--no-sort", "--layout=reverse", "--with-shell=sh -c",
 		"--preview=" + shellQuote(exe) + " open --preview {1}",
 	}
-	if got := env.args(t, "fzf"); !slices.Equal(got, want) {
+	if got := env.fzfArgs(t); !slices.Equal(got, want) {
 		t.Errorf("fzf args = %q, want %q", got, want)
 	}
 }
@@ -122,7 +119,7 @@ func TestOpenCancelledDoesNotSwitch(t *testing.T) {
 			if code != 0 || stderr != "" {
 				t.Errorf("open = %d, stderr %q, want 0 and silent", code, stderr)
 			}
-			if got := env.args(t, "tmux"); got != nil {
+			if got := env.tmux.Calls(t); got != nil {
 				t.Errorf("tmux ran with %q, want not run", got)
 			}
 		})
@@ -131,19 +128,24 @@ func TestOpenCancelledDoesNotSwitch(t *testing.T) {
 
 func TestOpenFails(t *testing.T) {
 	for name, tc := range map[string]struct {
-		env    map[string]string
-		stderr string
+		env map[string]string
+		// tmuxErr が空でなければ、tmux はこれを stderr に出して exit 1 で終わる。
+		tmuxErr string
+		stderr  string
 	}{
-		"outside tmux":         {map[string]string{"TMUX": ""}, "hikidashi open: not inside tmux"},
-		"fzf fails":            {map[string]string{"FAKE_FZF_EXIT": "2"}, "hikidashi open: run fzf: exit status 2\n"},
-		"tmux fails":           {map[string]string{"FAKE_FZF_SELECT": "api-3f2a9c1b/s1\tapi", "FAKE_TMUX_EXIT": "1"}, "hikidashi open: tmux switch-client -t %1: exit status 1: can't find pane: %9\n"},
-		"unexpected selection": {map[string]string{"FAKE_FZF_SELECT": "api-3f2a9c1b/s9\tx"}, "hikidashi open: unexpected selection \"api-3f2a9c1b/s9\\tx\"\n"},
+		"outside tmux":         {env: map[string]string{"TMUX": ""}, stderr: "hikidashi open: not inside tmux"},
+		"fzf fails":            {env: map[string]string{"FAKE_FZF_EXIT": "2"}, stderr: "hikidashi open: run fzf: exit status 2\n"},
+		"tmux fails":           {env: map[string]string{"FAKE_FZF_SELECT": "api-3f2a9c1b/s1\tapi"}, tmuxErr: "can't find pane: %1", stderr: "hikidashi open: tmux switch-client -t %1: exit status 1: can't find pane: %1\n"},
+		"unexpected selection": {env: map[string]string{"FAKE_FZF_SELECT": "api-3f2a9c1b/s9\tx"}, stderr: "hikidashi open: unexpected selection \"api-3f2a9c1b/s9\\tx\"\n"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			env := newOpenEnv(t)
 			env.seed(t)
 			for k, v := range tc.env {
 				t.Setenv(k, v)
+			}
+			if tc.tmuxErr != "" {
+				env.tmux.Fail(t, tc.tmuxErr, 1)
 			}
 
 			code, stdout, stderr := invoke(commands, "", "open")

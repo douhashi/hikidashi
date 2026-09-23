@@ -118,10 +118,7 @@ func TestNotesOutsideRegisteredDrawerFails(t *testing.T) {
 
 			code, _, stderr := invoke(commands, "", "notes")
 
-			f.assertFailed(t, code, stderr, 1, "is not in a registered drawer")
-			if strings.Contains(stderr, "hikidashi add") {
-				t.Errorf("stderr = %q, want no mention of the not yet available hikidashi add", stderr)
-			}
+			f.assertFailed(t, code, stderr, 1, "is not in a registered drawer; run \"hikidashi add\" in the repository to register it")
 			testutil.AssertNotExist(t, f.dataRoot)
 		})
 	}

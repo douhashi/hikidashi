@@ -237,11 +237,7 @@ func (f *FakeClaude) Overlapped() bool {
 func (f *FakeClaude) Calls(t *testing.T) []ClaudeCall {
 	t.Helper()
 	var calls []ClaudeCall
-	for n := 1; ; n++ {
-		c := filepath.Join(f.dir, "call"+strconv.Itoa(n))
-		if _, err := os.Stat(c); errors.Is(err, fs.ErrNotExist) {
-			return calls
-		}
+	for _, c := range callDirs(f.dir) {
 		env := map[string]string{}
 		for _, kv := range nulSplit(ReadFile(t, filepath.Join(c, "env"))) {
 			k, v, _ := strings.Cut(kv, "=")
@@ -253,6 +249,84 @@ func (f *FakeClaude) Calls(t *testing.T) []ClaudeCall {
 			Dir:   strings.TrimSuffix(ReadFile(t, filepath.Join(c, "dir")), "\n"),
 			Stdin: ReadFile(t, filepath.Join(c, "stdin")),
 		})
+	}
+	return calls
+}
+
+// FakeTmux は PATH の先頭に置いた偽の tmux コマンド。外部境界である tmux をテストで模す唯一の置き場で、
+// 呼ばれるたびに引数を記録する。既存のセッションを覚え、has-session はその有無で、new-session はその追加で応える。
+type FakeTmux struct {
+	dir string
+}
+
+// fakeTmuxScript は偽の tmux の本体。%s はデータのディレクトリ（単一引用符で囲める値）。
+// fail があれば、どの呼び出しにも stderr を出して fail の終了コードで終わる。
+// 引数の位置は internal/tmux が組み立てる形（has-session -t =<name> / new-session -d -s <name> -c <dir>）に合わせる。
+const fakeTmuxScript = `#!/bin/sh
+d='%s'
+n=1
+while ! mkdir "$d/call$n" 2>/dev/null; do n=$((n + 1)); done
+printf '%%s\0' "$@" >"$d/call$n/args"
+if [ -e "$d/fail" ]; then
+	cat "$d/stderr" >&2
+	exit "$(cat "$d/fail")"
+fi
+case "$1" in
+has-session)
+	[ -e "$d/sessions/${3#=}" ] && exit 0
+	echo "can't find session: ${3#=}" >&2
+	exit 1
+	;;
+new-session) : >"$d/sessions/$4" ;;
+esac
+`
+
+// NewFakeTmux は既存のセッションが無い偽の tmux を PATH の先頭に置く。
+func NewFakeTmux(t *testing.T) *FakeTmux {
+	t.Helper()
+	bin, dir := t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "tmux"), fmt.Appendf(nil, fakeTmuxScript, dir), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "sessions"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return &FakeTmux{dir: dir}
+}
+
+// AddSession は name のセッションを既存にする。
+func (f *FakeTmux) AddSession(t *testing.T, name string) {
+	t.Helper()
+	WriteFile(t, filepath.Join(f.dir, "sessions", name), "")
+}
+
+// Fail は以降の呼び出しを、stderr に msg を出して code で終わらせる。
+func (f *FakeTmux) Fail(t *testing.T, msg string, code int) {
+	t.Helper()
+	WriteFile(t, filepath.Join(f.dir, "stderr"), msg+"\n")
+	WriteFile(t, filepath.Join(f.dir, "fail"), strconv.Itoa(code))
+}
+
+// Calls はこれまでの呼び出しの引数を呼ばれた順に返す。
+func (f *FakeTmux) Calls(t *testing.T) [][]string {
+	t.Helper()
+	var calls [][]string
+	for _, c := range callDirs(f.dir) {
+		calls = append(calls, nulSplit(ReadFile(t, filepath.Join(c, "args"))))
+	}
+	return calls
+}
+
+// callDirs は偽のコマンドが dir に残した呼び出しごとの記録（call<N>/）を、呼ばれた順に返す。
+func callDirs(dir string) []string {
+	var dirs []string
+	for n := 1; ; n++ {
+		c := filepath.Join(dir, "call"+strconv.Itoa(n))
+		if _, err := os.Stat(c); errors.Is(err, fs.ErrNotExist) {
+			return dirs
+		}
+		dirs = append(dirs, c)
 	}
 }
 

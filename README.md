@@ -35,6 +35,22 @@ plugin は起動時に読み込まれるため、動いている Claude Code の
 > export GOPRIVATE=github.com/douhashi/hikidashi
 > ```
 
+## 案件を登録する
+
+hikidashi は、登録した案件（リポジトリ）のセッションだけを記録する。案件のリポジトリの中で `hikidashi add` を実行する。
+
+```sh
+cd ~/src/api
+hikidashi add
+# drawer: api-3f2a9c1b (registered)
+# tmux session: api-3f2a9c1b (created)
+```
+
+案件を引き出しとして登録し、リポジトリのルートを作業ディレクトリとする tmux セッションを用意する（既にあれば何もしない）。
+worktree やサブディレクトリから実行しても、メインのリポジトリが登録される。
+tmux のセッション名は `<リポジトリ名>-<パスのハッシュ 8 桁>` で、`.` と `:` は `_` に置き換わる（例: `example_com-3f2a9c1b`）。
+Claude Code はこのセッションの window / pane で動かす。
+
 ## tmux から開く
 
 `hikidashi open` は、全引き出しのセッションを fzf に並べ、選んだセッションの pane へ移動する。
