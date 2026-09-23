@@ -306,7 +306,7 @@ hook・extract・`hikidashi notes`・`hikidashi add`・引数なしの `hikidash
 2. 引き出しの tmux セッションが無ければ、`hikidashi add` と同じ規則（`has-session` → `new-session`）で作る
 3. `$TMUX` が空でなければ `tmux switch-client -t =<name>` で今のクライアントを切り替え、空なら `tmux attach-session -t =<name>` で繋ぐ
 
-- fzf の一覧の各行は `hikidashi list` の表の行（列・色・名前の順を共有する）で、見出しの 3 行は選べない行として一覧の上に固定し、下の罫線は出さない。各行の先頭に fzf には見せない slug と Issue の件数（`ISSUES` 列と同じ値）を持たせ、プレビューは隠しコマンド `hikidashi __preview {1} {2}` でそれを受け取る
+- fzf の一覧の表は `hikidashi list` と列・色・名前の順を共有し、外枠を出さず見出しの横線と列の縦線だけを持つ（fzf は下端の罫線を固定できないため）。見出しと区切り線の 2 行は選べない行として一覧の上に固定する。各行の先頭に fzf には見せない slug と Issue の件数（`ISSUES` 列と同じ値）を持たせ、プレビューは隠しコマンド `hikidashi __preview {1} {2}` でそれを受け取る
 - 絞り込みは表の名前のセルにだけ当て（`--nth`）、件数や NOTES の文字では当たらない。Issue の件数が得られない理由は fzf の画面に上書きされるため出さず、表の `?` だけで示す
 - プレビューは `hikidashi show` と同じ詳細を同じ幅と色の規則で出すが、Issue の件数は一覧で数えた値（`?` を含む）を使い `gh` を呼ばない。カーソルを動かすたびに数え直す待ち時間を省くため。件数が `?` でも理由は出さない
 - `__preview` は使い方にも補完にも出さない。引数が 2 個でない・件数が非負の整数でも `?` でもなければ exit 2、存在しない引き出しは exit 1 とする

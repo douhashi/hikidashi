@@ -119,11 +119,25 @@ const notesHeader = "NOTES"
 // Table は summaries を 1 引き出し 1 行の罫線付きの表にする。件数は 1 件以上を状態ごとの色で示す。
 // width は出力先の幅で、正なら備忘録の列を表が width に収まるよう … で切り詰め（見出しの幅は残す）、0 なら切り詰めない。
 func Table(summaries []Summary, width int) string {
+	return fittedTable(summaries, width, true)
+}
+
+// TableLines は Table と同じ列・色の表を外枠なしで作り、見出しの 2 行（見出し・区切りの罫線）と、
+// summaries の順の 1 引き出し 1 行に分けて返す。width の扱いは Table と同じ。
+// hikidashi open の fzf が見出しを一覧の上に固定し、引き出しの行だけを選ばせるため。
+// fzf は一覧の下端の罫線を固定できないため、上下左右の外枠を出さない。
+func TableLines(summaries []Summary, width int) (header, rows []string) {
+	lines := strings.Split(fittedTable(summaries, width, false), "\n")
+	return lines[:2], lines[2 : 2+len(summaries)]
+}
+
+// fittedTable は framed（外枠の有無）の表を、width（0 は制限なし）に収まるよう備忘録の列を … で切り詰めて返す。
+func fittedTable(summaries []Summary, width int, framed bool) string {
 	notes := make([]string, len(summaries))
 	limit := 0
 	if width > 0 {
 		// 備忘録の列を空にした表の幅（最も広い行の幅）から、見出しの幅を除いた残りの列と罫線の幅。
-		others := lipgloss.Width(summaryTable(summaries, notes)) - len(notesHeader)
+		others := lipgloss.Width(summaryTable(summaries, notes, framed)) - len(notesHeader)
 		limit = max(width-others, len(notesHeader))
 	}
 	for i, s := range summaries {
@@ -132,19 +146,14 @@ func Table(summaries []Summary, width int) string {
 			notes[i] = ansi.Truncate(s.Note, limit, "…")
 		}
 	}
-	return summaryTable(summaries, notes)
-}
-
-// TableLines は Table と同じ表を、見出しの 3 行（上の罫線・見出し・区切りの罫線）と、summaries の順の 1 引き出し 1 行に分けて返す。
-// 下の罫線は返さない。hikidashi open の fzf が見出しを一覧の上に固定し、引き出しの行だけを選ばせるため。
-func TableLines(summaries []Summary, width int) (header, rows []string) {
-	lines := strings.Split(Table(summaries, width), "\n")
-	return lines[:3], lines[3 : 3+len(summaries)]
+	return summaryTable(summaries, notes, framed)
 }
 
 // summaryTable は summaries の各行の備忘録の列を notes にした表を返す。
-func summaryTable(summaries []Summary, notes []string) string {
+// framed が偽なら上下左右の外枠を出さず、見出しの区切り線と列の縦線だけを持つ。
+func summaryTable(summaries []Summary, notes []string, framed bool) string {
 	t := table.New().Border(lipgloss.RoundedBorder()).BorderStyle(lipgloss.NewStyle().Foreground(lineColor)).
+		BorderTop(framed).BorderBottom(framed).BorderLeft(framed).BorderRight(framed).
 		Headers("DRAWER", "ISSUES", "RUNNING", "WAITING", "IDLE", notesHeader).
 		StyleFunc(func(row, col int) lipgloss.Style {
 			return cellStyle(summaries, row, col).Padding(0, 1).Align(cellAlign(col))

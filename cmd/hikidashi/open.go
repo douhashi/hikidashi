@@ -130,8 +130,8 @@ func listTableWidth(width int) int {
 func choose(lines []string, headerLines int, exe string, stderr io.Writer) (line string, ok bool, err error) {
 	cmd := exec.Command("fzf",
 		// 表の行の色を見せ、区切りの TAB と表の縦の罫線で列に分ける。1 列目は slug、2 列目は件数で、どちらも見せない。
-		// --nth は --with-nth で残した列を数えるため、2 列目は表の左の罫線より後ろの名前のセル。
-		"--ansi", fmt.Sprintf("--header-lines=%d", headerLines), "--delimiter=\t|│", "--with-nth=3..", "--nth=2",
+		// --nth は --with-nth で残した列を数え、表に左の罫線が無いため 1 列目が名前のセル。
+		"--ansi", fmt.Sprintf("--header-lines=%d", headerLines), "--delimiter=\t|│", "--with-nth=3..", "--nth=1",
 		// 並び順どおりに、先頭の行を上に出す。
 		"--no-sort", "--layout=reverse",
 		// プレビューのコマンドの引用を、利用者のログインシェルによらず POSIX sh の規則に揃える。
