@@ -395,3 +395,174 @@ func TestListFailsWhenDrawerJSONCannotBeRead(t *testing.T) {
 		t.Error("List succeeded, want an error")
 	}
 }
+
+// registerAt は dataRoot 配下に slug の引き出しを、path と name で登録して返す。
+func registerAt(t *testing.T, dataRoot, slug, path, name string) Drawer {
+	t.Helper()
+	d := Drawer{Dir: filepath.Join(dataRoot, "drawers", slug), Path: path, Name: name}
+	if err := d.Register(); err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
+func TestFindBySlugOrUniqueName(t *testing.T) {
+	dataRoot := t.TempDir()
+	api := registerAt(t, dataRoot, "api-3f2a9c1b", "/src/api", "api")
+	// 名前が別の引き出しの slug と同じでも、slug の完全一致を優先する。
+	registerAt(t, dataRoot, "api-3f2a9c1b-0a1b2c3d", "/src/x/api-3f2a9c1b", "api-3f2a9c1b")
+
+	for name, want := range map[string]Drawer{"api-3f2a9c1b": api, "api": api} {
+		t.Run(name, func(t *testing.T) {
+			got, ok, err := Find(dataRoot, name)
+
+			if err != nil || !ok {
+				t.Fatalf("Find(%q) = ok %v, err %v, want %s", name, ok, err, want.Dir)
+			}
+			if got.Dir != want.Dir || got.Path != want.Path || got.Name != want.Name || got.CreatedAt.IsZero() {
+				t.Errorf("Find(%q) = %+v, want %+v with created_at", name, got, want)
+			}
+		})
+	}
+}
+
+func TestFindDoesNotFindUnregisteredName(t *testing.T) {
+	dataRoot := t.TempDir()
+	registerAt(t, dataRoot, "api-3f2a9c1b", "/src/api", "api")
+	// drawer.json の無いディレクトリ（取り消し後に備忘録だけが残ったもの）は引き出しではない。
+	testutil.WriteFile(t, filepath.Join(dataRoot, "drawers", "web-0a1b2c3d", "notes.md"), "memo\n")
+
+	for _, name := range []string{"web", "web-0a1b2c3d", "ap", "api-3f2a9c1", ""} {
+		t.Run(name, func(t *testing.T) {
+			if _, ok, err := Find(dataRoot, name); ok || err != nil {
+				t.Errorf("Find(%q) = ok %v, err %v, want ok false, err nil", name, ok, err)
+			}
+		})
+	}
+}
+
+func TestFindFailsOnAmbiguousNameWithCandidates(t *testing.T) {
+	dataRoot := t.TempDir()
+	registerAt(t, dataRoot, "app-11111111", "/x/app", "app")
+	registerAt(t, dataRoot, "app-22222222", "/y/app", "app")
+
+	_, ok, err := Find(dataRoot, "app")
+
+	if ok || err == nil {
+		t.Fatalf("Find = ok %v, err %v, want an error", ok, err)
+	}
+	if want := `"app" matches more than one drawer: app-11111111, app-22222222`; err.Error() != want {
+		t.Errorf("error = %q, want %q", err, want)
+	}
+}
+
+func TestFindFailsWhenDrawersCannotBeListed(t *testing.T) {
+	dataRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dataRoot, "drawers", "api-3f2a9c1b", "drawer.json"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, _, err := Find(dataRoot, "api"); err == nil {
+		t.Error("Find succeeded, want an error")
+	}
+}
+
+func TestNotesReturnsNonBlankNotes(t *testing.T) {
+	d := Drawer{Dir: filepath.Join(t.TempDir(), "api-3f2a9c1b")}
+	testutil.WriteFile(t, d.NotesPath(), "remember\n")
+
+	got, ok, err := d.Notes()
+
+	if err != nil || !ok || got != "remember\n" {
+		t.Errorf("Notes = %q, ok %v, err %v, want the notes", got, ok, err)
+	}
+}
+
+func TestNotesIgnoresMissingOrBlankNotes(t *testing.T) {
+	empty, blank := "", " \n\t\n"
+	for name, content := range map[string]*string{"missing": nil, "empty": &empty, "blank": &blank} {
+		t.Run(name, func(t *testing.T) {
+			d := Drawer{Dir: filepath.Join(t.TempDir(), "api-3f2a9c1b")}
+			if content != nil {
+				testutil.WriteFile(t, d.NotesPath(), *content)
+			}
+
+			if got, ok, err := d.Notes(); ok || err != nil {
+				t.Errorf("Notes = %q, ok %v, err %v, want ok false, err nil", got, ok, err)
+			}
+		})
+	}
+}
+
+func TestNotesFailsWhenNotesCannotBeRead(t *testing.T) {
+	d := Drawer{Dir: filepath.Join(t.TempDir(), "api-3f2a9c1b")}
+	if err := os.MkdirAll(d.NotesPath(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, _, err := d.Notes(); err == nil {
+		t.Error("Notes succeeded, want an error")
+	}
+}
+
+// fillDrawer は登録済みの引き出し d に、セッションのファイルと notes.md（notes が nil なら作らない）を置く。
+func fillDrawer(t *testing.T, d Drawer, notes *string) {
+	t.Helper()
+	for _, name := range []string{"s1.json", "s1.next.json", "s1.extract.lock"} {
+		testutil.WriteFile(t, filepath.Join(d.Dir, "sessions", name), "{}")
+	}
+	if notes != nil {
+		testutil.WriteFile(t, d.NotesPath(), *notes)
+	}
+}
+
+func TestUnregisterKeepsNonBlankNotesOnly(t *testing.T) {
+	dataRoot := t.TempDir()
+	d := registerAt(t, dataRoot, "api-3f2a9c1b", "/src/api", "api")
+	notes := "remember the staging DB\n"
+	fillDrawer(t, d, &notes)
+
+	kept, err := d.Unregister()
+
+	if err != nil || !kept {
+		t.Fatalf("Unregister = kept %v, err %v, want notes kept", kept, err)
+	}
+	testutil.AssertEntries(t, d.Dir, "notes.md")
+	if got := testutil.ReadFile(t, d.NotesPath()); got != notes {
+		t.Errorf("notes.md = %q, want %q", got, notes)
+	}
+	if got, _ := List(dataRoot); len(got) != 0 {
+		t.Errorf("List = %+v, want no drawers", got)
+	}
+}
+
+func TestUnregisterRemovesDrawerWithoutNotes(t *testing.T) {
+	empty, blank := "", " \n\t\n"
+	for name, notes := range map[string]*string{"missing": nil, "empty": &empty, "blank": &blank} {
+		t.Run(name, func(t *testing.T) {
+			dataRoot := t.TempDir()
+			d := registerAt(t, dataRoot, "api-3f2a9c1b", "/src/api", "api")
+			fillDrawer(t, d, notes)
+
+			kept, err := d.Unregister()
+
+			if err != nil || kept {
+				t.Fatalf("Unregister = kept %v, err %v, want nothing kept", kept, err)
+			}
+			testutil.AssertEntries(t, filepath.Join(dataRoot, "drawers"))
+		})
+	}
+}
+
+func TestUnregisterFailsWhenNotRegistered(t *testing.T) {
+	dataRoot := t.TempDir()
+	d := Drawer{Dir: filepath.Join(dataRoot, "drawers", "api-3f2a9c1b")}
+	testutil.WriteFile(t, d.NotesPath(), "memo\n")
+
+	if _, err := d.Unregister(); err == nil {
+		t.Error("Unregister succeeded, want an error")
+	}
+	if got := testutil.ReadFile(t, d.NotesPath()); got != "memo\n" {
+		t.Errorf("notes.md = %q, want it untouched", got)
+	}
+}

@@ -84,16 +84,19 @@ func oneLine(s string) string {
 }
 
 // Preview は隠しキー k のセッションについて、次アクションの全項目と引き出しの備忘録を返す。
-// k の引き出しは dataRoot に登録済みの引き出しから名前で引き、k からパスを組み立てない。
+// k の引き出しは dataRoot に登録済みの引き出しから slug で引き（drawer.Find）、k からパスを組み立てない。
 // セッション ID もファイル名に使える形に限るため、不正なキーでデータルートの外を読むことはない。
 func Preview(dataRoot, k string) (string, error) {
 	slug, id, _ := strings.Cut(k, "/")
 	if !session.ValidID(id) {
 		return "", fmt.Errorf("invalid key %q", k)
 	}
-	d, err := find(dataRoot, slug)
+	d, ok, err := drawer.Find(dataRoot, slug)
 	if err != nil {
 		return "", err
+	}
+	if !ok {
+		return "", fmt.Errorf("no drawer %q", slug)
 	}
 	next, hasNext, err := session.ReadNext(d.Dir, id)
 	if err != nil {
@@ -116,20 +119,6 @@ func Preview(dataRoot, k string) (string, error) {
 	b.WriteString("\n── notes.md ──\n")
 	b.Write(notes)
 	return b.String(), nil
-}
-
-// find は dataRoot に登録済みの引き出しから、slug が一致するものを返す。
-func find(dataRoot, slug string) (drawer.Drawer, error) {
-	drawers, err := drawer.List(dataRoot)
-	if err != nil {
-		return drawer.Drawer{}, err
-	}
-	for _, d := range drawers {
-		if d.Slug() == slug {
-			return d, nil
-		}
-	}
-	return drawer.Drawer{}, fmt.Errorf("no drawer %q", slug)
 }
 
 // writeNext は次アクションの全項目を、sessions/<session_id>.next.json のフィールド名で書く。

@@ -139,6 +139,23 @@ func TestPreviewWithoutNextActionOrNotes(t *testing.T) {
 	}
 }
 
+func TestPreviewFindsDrawerBySlugAmongSameNames(t *testing.T) {
+	dataRoot, _ := previewFixture(t)
+	other := drawer.Drawer{Dir: filepath.Join(dataRoot, "drawers", "api-0a1b2c3d"), Path: "/other/api", Name: "api"}
+	if err := other.Register(); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := Preview(dataRoot, "api-0a1b2c3d/s1")
+
+	if err != nil {
+		t.Fatalf("Preview: %v", err)
+	}
+	if want := "api  /other/api\n"; !strings.HasPrefix(got, want) {
+		t.Errorf("Preview = %q, want it to start with %q", got, want)
+	}
+}
+
 func TestPreviewDoesNotReadOutsideDataRoot(t *testing.T) {
 	base := t.TempDir()
 	dataRoot := filepath.Join(base, "root")

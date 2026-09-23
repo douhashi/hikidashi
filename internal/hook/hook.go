@@ -7,10 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
-	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/douhashi/hikidashi/internal/drawer"
@@ -163,20 +160,13 @@ type sessionStartOutput struct {
 // injectNotes は引き出しの notes.md を、出所の見出しを付けて SessionStart の additionalContext として stdout に 1 回で書く。
 // notes.md が無い・空白だけなら何も書かない。
 func injectNotes(stdout io.Writer, d drawer.Drawer) error {
-	path := d.NotesPath()
-	notes, err := os.ReadFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
+	notes, ok, err := d.Notes()
+	if !ok || err != nil {
 		return err
-	}
-	if strings.TrimSpace(string(notes)) == "" {
-		return nil
 	}
 	return json.NewEncoder(stdout).Encode(hookOutput{sessionStartOutput{
 		HookEventName:     "SessionStart",
-		AdditionalContext: fmt.Sprintf("# hikidashi notes for %s (%s)\n\n%s", d.Name, path, notes),
+		AdditionalContext: fmt.Sprintf("# hikidashi notes for %s (%s)\n\n%s", d.Name, d.NotesPath(), notes),
 	}})
 }
 

@@ -51,6 +51,19 @@ worktree やサブディレクトリから実行しても、メインのリポ�
 tmux のセッション名は `<リポジトリ名>-<パスのハッシュ 8 桁>` で、`.` と `:` は `_` に置き換わる（例: `example_com-3f2a9c1b`）。
 Claude Code はこのセッションの window / pane で動かす。
 
+## 案件の登録を取り消す
+
+`hikidashi remove` は、案件の登録を取り消し、記録したセッションを消す。案件のリポジトリの中で実行するか、引き出しの名前を渡す。
+
+```sh
+hikidashi remove api            # 名前（同名が複数あれば api-3f2a9c1b のように指定する）
+# drawer: api-3f2a9c1b (removed)
+# notes: /home/you/.hikidashi/drawers/api-3f2a9c1b/notes.md (kept)
+```
+
+備忘録（`notes.md`）は空でなければ残り、同じリポジトリで `hikidashi add` すると戻る。
+tmux セッションは閉じないため、不要なら `tmux kill-session -t api-3f2a9c1b` で閉じる。
+
 ## tmux から開く
 
 `hikidashi open` は、全引き出しのセッションを fzf に並べ、選んだセッションの pane へ移動する。
