@@ -42,7 +42,7 @@ type Summary struct {
 }
 
 // Summaries は dataRoot に登録済みの全引き出しの概況を、名前の順（同名は slug の順）に返す。
-// Issue の件数は引き出しごとに並行して数える。セッションの後始末と中断の扱いは scan に従う。
+// Issue の件数は引き出しごとに並行して数える。セッションの後始末、中断とバックグラウンドのタスクの扱いは scan に従う。
 func Summaries(dataRoot string) ([]Summary, error) {
 	drawers, err := drawer.List(dataRoot)
 	if err != nil {

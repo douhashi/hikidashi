@@ -141,6 +141,46 @@ func TestCollectTreatsInterruptedSessionAsIdleSinceInterruption(t *testing.T) {
 	}
 }
 
+func TestCollectTreatsIdleSessionWithUnfinishedAgentAsRunning(t *testing.T) {
+	f := newFixture(t)
+	api := f.drawer("api")
+	busy := f.session(api, "busy", session.Idle, at(10, 0))
+	done := f.session(api, "done", session.Idle, at(9, 0))
+	interrupted := f.session(api, "int", session.Running, at(9, 30))
+	launched := func(id string) string {
+		return `{"type":"user","isSidechain":false,"timestamp":"2026-09-23T09:00:00Z","toolUseResult":{"status":"async_launched","agentId":"` + id + `"}}` + "\n"
+	}
+	notified := `{"type":"user","isSidechain":false,"message":{"content":"<task-notification>\n<task-id>a1</task-id>\n<status>completed</status>\n</task-notification>"}}` + "\n"
+	testutil.WriteFile(t, busy.TranscriptPath, launched("a1"))
+	testutil.WriteFile(t, done.TranscriptPath, launched("a1")+notified)
+	// 中断で idle になったセッションも、エージェントが残っていれば走行中とする。
+	testutil.WriteFile(t, interrupted.TranscriptPath, launched("a2")+
+		`{"type":"user","isSidechain":false,"message":{"content":"[Request interrupted by user]"},"timestamp":"2026-09-23T10:20:00Z"}`+"\n")
+	before := testutil.ReadFile(t, filepath.Join(api.Dir, "sessions", "busy.json"))
+
+	got := f.collect()
+
+	if want := []string{"api/done", "api/busy", "api/int"}; !slices.Equal(keys(got), want) {
+		t.Fatalf("order = %q, want %q", keys(got), want)
+	}
+	for i, want := range []struct {
+		state session.State
+		since time.Time
+	}{
+		{session.Idle, at(9, 0)},
+		{session.Running, at(10, 0)},
+		{session.Running, at(10, 20)},
+	} {
+		if got[i].Session.State != want.state || !got[i].Since.Equal(want.since) {
+			t.Errorf("%s = %s since %v, want %s since %v", keys(got)[i], got[i].Session.State, got[i].Since, want.state, want.since)
+		}
+	}
+	// 読み手はセッションのファイルを書き換えない。
+	if after := testutil.ReadFile(t, filepath.Join(api.Dir, "sessions", "busy.json")); after != before {
+		t.Errorf("session file = %s, want unchanged %s", after, before)
+	}
+}
+
 func TestCollectListsSessionsWithAndWithoutNextAction(t *testing.T) {
 	f := newFixture(t)
 	api := f.drawer("api")

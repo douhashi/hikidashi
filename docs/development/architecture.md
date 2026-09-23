@@ -98,7 +98,7 @@ flowchart LR
 ```mermaid
 stateDiagram-v2
   [*] --> idle: SessionStart
-  idle --> running: UserPromptSubmit
+  idle --> running: UserPromptSubmit / 未完了のバックグラウンドのタスク
   running --> waiting: PermissionRequest / Notification（elicitation）
   waiting --> running: PostToolUse / UserPromptSubmit
   running --> idle: Stop / StopFailure / 中断の記録
@@ -135,6 +135,20 @@ stateDiagram-v2
 
 - 読み手（`status` / `list` / `show`）は、`running` / `waiting` のセッションについて transcript の末尾を読み、最後の `user` のエントリが中断の記録で、その時刻が `state_changed_at` より後なら `idle` として扱う
 - セッションのファイルは書き換えない（書き手は hook だけ）。次の `UserPromptSubmit` で hook が正しい状態に戻す
+
+### バックグラウンドのタスクの扱い
+
+バックグラウンドのエージェントを残してメインのターンが終わると `Stop` で `idle` になり、完了通知でターンが再開するまで、人間を待っていないのに `idle` と見える。
+transcript には起動と完了通知が残るため、読み手がこれを突き合わせる。
+
+- 読み手は、中断の扱いの後で実効の状態が `idle` のセッションについて transcript の全体を先頭から読み、未完了のエージェントが残っていれば `running` として扱う。放置の起点は `idle` に入った時刻のまま
+- 起動は `isSidechain` が偽の `user` のエントリの `toolUseResult` で、`status` が `async_launched` の `agentId` と、SendMessage による再開の `resumedAgentId` とする。時刻が `started_at` より後のものだけ数える（resume 前のタスクで走行中が残り続けないため）
+- 完了は `<task-notification>` で始まり `<status>` を持つ通知で、`<status>` より前の `<task-id>` のタスクとする。`user` の文字列の content と、ターン中に吸収された `attachment`（`type` が `queued_command`）の `prompt` から拾う。`<status>` の無い Monitor のイベント通知は完了としない
+- 起動と完了は記録の順に出し入れする。再開したエージェントは同じ ID で何度も通知するため。自身のバックグラウンドの子を残して止まったエージェントも通知し（子の完了で動き直すと再び通知する）、その間は `idle` と出る
+- メインが起動していない ID の通知（サブエージェントが起動した孫エージェントの通知。`user` や `queue-operation` として届く）は数えない
+- `async_launched`・`resumedAgentId`・`<task-id>` のどれも含まない行は JSON を解かずに飛ばす。手元最大の 41MB の transcript でも全体を読んで 100ms 未満に収まり、`running` / `waiting` のセッションは読まない
+- Bash の `run_in_background`（`backgroundTaskId`）は数えない。Issue #49 の要求は Bash も含めていたが、開発サーバのような終わらないプロセスでは完了通知が来ず、人間を待っているセッションが `running` のまま隠れる。`idle` の意味（人間の次の指示を待っている）を優先し、有限で終わる Bash の実行中は従来どおり `idle` と出す
+- セッションのファイルは書き換えない（書き手は hook だけ）。完了通知でターンが再開すれば hook が `running` を記録する
 
 ## データの置き場
 
@@ -268,7 +282,7 @@ hook・extract・`hikidashi notes`・`hikidashi add`・引数なしの `hikidash
 
 ## UI
 
-- 状態と放置時間は中断を反映した実効の値で出す（上記「中断の扱い」）。放置時間はその状態に入ってからの経過で、`5m` / `3h` / `2d` の形に切り捨てる
+- 状態と放置時間は中断とバックグラウンドのタスクを反映した実効の値で出す（上記「中断の扱い」「バックグラウンドのタスクの扱い」）。放置時間はその状態に入ってからの経過で、`5m` / `3h` / `2d` の形に切り捨てる
 - `hikidashi status` は `waiting` の件数だけを出す。0 件なら何も出さない。出力は件数と改行のみで、引数があれば exit 2、失敗は `!` を出して exit 1 とする
 - `hikidashi list` は罫線付きの表、`hikidashi show` は角丸の枠で出し、状態を色で示す（下記「`hikidashi list`」「`hikidashi show`」）。表と枠は lipgloss で組む
 - 色は常に付け、書き出すときに colorprofile が落とす。stdout が端末でない（パイプ・skill から呼んだ Claude Code）か `NO_COLOR` があれば色の制御文字を出さず、罫線だけのテキストになる。`CLICOLOR_FORCE` があれば端末でなくても色を残す
@@ -302,7 +316,7 @@ hook・extract・`hikidashi notes`・`hikidashi add`・引数なしの `hikidash
 - 引き出しの枠（青）はタイトルが name で、`path`・`slug`・`issues`（`<N> open`、得られなければ `?`）の行を持つ
 - セッションの枠はタイトルが `session <session_id>` と状態の札（` WAITING 10m ` の形で放置時間を添える）で、枠と札の色が実効の状態を示す。`pane` と次アクションの全項目（`next.json` のフィールド名をラベルにする）の行を持つ
 - セッションは `waiting` → `idle` → `running`（人間が捌くべきものを上に）、同順位は放置の長い順に並べ、無ければ `(no sessions)` を出す。最後に `notes.md` の枠（暗い灰）に備忘録の本文を出す
-- 状態の件数・状態・放置時間は中断を反映した実効の値で、claude が終わったセッションは後始末して数えない
+- 状態の件数・状態・放置時間は中断とバックグラウンドのタスクを反映した実効の値で、claude が終わったセッションは後始末して数えない
 - `<drawer>` は `hikidashi remove` と同じ規則で引き出しを決める（上記「`hikidashi remove`」）。名前が複数に当たれば候補の slug を stderr に出して exit 1 とする
 - 引数が無ければ作業ディレクトリの引き出しの詳細を、その slug を渡したときと同じに出す。Git 管理外なら `hikidashi list` を、未登録なら `hikidashi add` を stderr で案内して exit 1 とする
 - Open な Issue の件数は、リポジトリのルートで `gh repo view --json issues` を実行した `issues.totalCount`（Pull Request を含まない）とする。1 回 10 秒で打ち切る

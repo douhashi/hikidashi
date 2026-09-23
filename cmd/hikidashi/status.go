@@ -33,7 +33,7 @@ func runStatus(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 }
 
 // countWaiting は全引き出しの生きているセッションのうち、実効の状態が waiting のものを数える。
-// 死んだセッションの除外と中断の idle 化は scan.Collect が済ませる。
+// 死んだセッションの除外、中断とバックグラウンドのタスクの反映は scan.Collect が済ませる。
 func countWaiting() (int, error) {
 	root, err := drawer.DefaultRoot()
 	if err != nil {
