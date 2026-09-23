@@ -9,7 +9,7 @@ import (
 	"github.com/douhashi/hikidashi/internal/tmux"
 )
 
-// runAdd は hikidashi add の入口。作業ディレクトリの案件を引き出しとして登録し、tmux セッションを用意する。
+// runAdd は hikidashi add の入口。作業ディレクトリのプロジェクトを引き出しとして登録し、tmux セッションを用意する。
 // 引数があれば exit 2、Git 管理外・git や tmux の失敗は exit 1 とする。
 func runAdd(args []string, _ io.Reader, stdout, stderr io.Writer) int {
 	if len(args) > 0 {

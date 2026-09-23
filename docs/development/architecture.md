@@ -6,7 +6,7 @@ hikidashi の設計原則と仕組みの構成。何を解くか・語彙は [`.
 
 ### 1. クライアントのリポジトリに痕跡を残さない
 
-- 受託案件のリポジトリにある `CLAUDE.md` や `.gitignore`、`.git/` には一切手を入れない
+- 受託プロジェクトのリポジトリにある `CLAUDE.md` や `.gitignore`、`.git/` には一切手を入れない
 - hooks は Claude Code plugin としてユーザースコープで有効にする。プロジェクトの設定には何も書かない
 - データはすべてリポジトリ外の `~/.hikidashi/` に置く（下記「データの置き場」）
 
@@ -68,14 +68,14 @@ flowchart LR
 | 要素 | 実体 | 役割 |
 | --- | --- | --- |
 | `hikidashi` | Go の単一バイナリ | 以下のサブコマンドをすべて持つ。`PATH` 上に置く |
-| `hikidashi add` | 人間・skill から呼んだ Claude Code が起動 | 作業ディレクトリの案件を引き出しとして登録し、tmux セッションを用意する |
-| `hikidashi remove` | 人間・skill から呼んだ Claude Code が起動 | 案件の登録を取り消す。空でない備忘録は残す |
+| `hikidashi add` | 人間・skill から呼んだ Claude Code が起動 | 作業ディレクトリのプロジェクトを引き出しとして登録し、tmux セッションを用意する |
+| `hikidashi remove` | 人間・skill から呼んだ Claude Code が起動 | プロジェクトの登録を取り消す。空でない備忘録は残す |
 | `hikidashi hook` | hook から起動 | 登録済みの引き出しへの状態の記録、備忘録の注入 |
 | `hikidashi extract` | `Stop` の async hook から起動 | transcript の末尾から次アクションを抽出する |
-| `hikidashi open` | 人間が端末・tmux の `display-popup` から起動 | 案件の tmux セッションを（無ければ作って）開く |
+| `hikidashi open` | 人間が端末・tmux の `display-popup` から起動 | プロジェクトの tmux セッションを（無ければ作って）開く |
 | `hikidashi status` | tmux の `status-right` から起動 | 入力待ちの件数を出す |
-| `hikidashi list` | 人間・skill から呼んだ Claude Code が起動 | 全案件の概況を出す |
-| `hikidashi show` | 人間・skill から呼んだ Claude Code が起動 | 1 案件（省略時は作業ディレクトリの案件）の詳細を出す |
+| `hikidashi list` | 人間・skill から呼んだ Claude Code が起動 | 全プロジェクトの概況を出す |
+| `hikidashi show` | 人間・skill から呼んだ Claude Code が起動 | 1 プロジェクト（省略時は作業ディレクトリのプロジェクト）の詳細を出す |
 | `hikidashi notes` | 人間が起動 | 現在の引き出しの `notes.md` を `$EDITOR` で開く |
 | plugin | `plugin/hooks/hooks.json`・`plugin/skills/hikidashi/SKILL.md` | イベントを繋ぐ・頼まれたコマンドを実行するだけでロジックは持たない |
 
@@ -164,8 +164,8 @@ transcript には起動と完了通知が残るため、読み手がこれを突
         └── <session_id>.extract.lock  # 抽出の排他・間引き用
 ```
 
-- ディレクトリは 0700、ファイルは 0600 で作る。案件の情報を他のユーザーから読めなくするため
-- リポジトリ内（`<repo>/.hikidashi/` を `.git/info/exclude` で除外）は採らない。`.git` も案件リポジトリの一部であり、原則 1 に反するため
+- ディレクトリは 0700、ファイルは 0600 で作る。プロジェクトの情報を他のユーザーから読めなくするため
+- リポジトリ内（`<repo>/.hikidashi/` を `.git/info/exclude` で除外）は採らない。`.git` もプロジェクトのリポジトリの一部であり、原則 1 に反するため
 - 備忘録がリポジトリの横に無い分は、`hikidashi notes` で補う
 - リポジトリを移動すると別の引き出しになる。頻度が低いため、移行の仕組みは持たない
 
@@ -207,16 +207,16 @@ transcript には起動と完了通知が残るため、読み手がこれを突
 hook・extract・`hikidashi notes`・`hikidashi add`・引数なしの `hikidashi remove`・`hikidashi open`・`hikidashi show` は `cwd`（hook の入力、または作業ディレクトリ）から引き出しを決める。
 
 1. `git -C <cwd> rev-parse --path-format=absolute --git-common-dir --show-toplevel` を 1 回呼ぶ。共通の `.git` の basename が `.git` ならその親を、それ以外（submodule 等）は toplevel をリポジトリのルートとし、シンボリックリンクを解決する。worktree からでもメイン worktree に寄り、submodule はそれ自身の引き出しになる
-2. git が非 0 で終わる `cwd`（Git 管理外・bare・`.git` の中・存在しない）は追跡しない（1 案件 = 1 リポジトリ）。備忘録の注入も行わない。git を起動できないときだけエラーにする
+2. git が非 0 で終わる `cwd`（Git 管理外・bare・`.git` の中・存在しない）は追跡しない（1 プロジェクト = 1 リポジトリ）。備忘録の注入も行わない。git を起動できないときだけエラーにする
 3. `<slug>` は `<name>-<ルートの絶対パスの SHA-256 の先頭 8 桁>` とする（例: `api-3f2a9c1b`）
 4. `drawers/<slug>/drawer.json` があれば登録済みとし（`hikidashi add` が書き、`hikidashi remove` が消す）、それだけを記録・注入・抽出・`hikidashi notes` の対象にする。無ければ（未登録）何も作らず何もしない。壊れていればエラーにする
 
 - slug をハッシュにする理由: パスを `-` で繋ぐ方式は `a-b/c` と `a/b-c` が衝突し、衝突の検出と回避を別途書くことになる。ハッシュなら固定長で衝突を考えなくてよく、読みやすさは `name` の接頭辞で保つ
 - 未登録はエラーではない。hook・extract は `hikidashi.log` にも何も書かずに exit 0 で終える。人が登録していないリポジトリで Claude Code が動くのは普通のことであり、そのたびに記録やログを残さないため
 - 引き出しの一覧は `drawers/` 配下の列挙で得る。別途の一覧ファイルは持たない
-- submodule を親の引き出しに寄せない理由: 独立したリポジトリであり、語彙どおり別の案件として扱う。submodule の worktree も別の引き出しになる
+- submodule を親の引き出しに寄せない理由: 独立したリポジトリであり、語彙どおり別のプロジェクトとして扱う。submodule の worktree も別の引き出しになる
 - `$TMUX_PANE` が空（tmux 外）のセッションは状態を記録しない。備忘録の注入は行う
-- tmux 外を記録しない理由: Claude Code は案件の tmux セッションで動かすもの（1 案件 = 1 tmux セッション）であり、その外のセッションは追う対象にしない（#41）
+- tmux 外を記録しない理由: Claude Code はプロジェクトの tmux セッションで動かすもの（1 プロジェクト = 1 tmux セッション）であり、その外のセッションは追う対象にしない（#41）
 
 ### `hikidashi add`
 
@@ -267,7 +267,7 @@ hook・extract・`hikidashi notes`・`hikidashi add`・引数なしの `hikidash
 
 - extract も hook と同じく常に exit 0 で終え、失敗は `hikidashi.log` に `extract:` の行で残す
 - 再帰の防止: 子の `claude -p` でもユーザーの plugin の hooks は発火し、`$TMUX_PANE` も引き継がれる。放置すると抽出のたびに偽のセッションが記録されるため、子には `HIKIDASHI_DISABLE=1` を渡し、`hikidashi hook` と `hikidashi extract` はこれを見たら何もせずに終える。hooks を飛ばす `--bare` は OAuth 認証で使えないため採らない
-- 子をデータルートで動かすのは、案件のリポジトリの `CLAUDE.md` や設定を読ませないため。`--tools ""` により子はツールを使えず、transcript に書かれた指示に従ってもファイルやコマンドに触れない
+- 子をデータルートで動かすのは、プロジェクトのリポジトリの `CLAUDE.md` や設定を読ませないため。`--tools ""` により子はツールを使えず、transcript に書かれた指示に従ってもファイルやコマンドに触れない
 - `--no-session-persistence` により、抽出の実行は transcript を残さない。構造化出力は結果の JSON の `structured_output` に入る
 - セッション状態のファイルを確かめるのは、抽出の間に `SessionEnd` が来たセッションに、読み手のいない次アクションを残さないため
 - 要約用のプロンプトとスキーマはバイナリに埋め込む
@@ -294,13 +294,13 @@ hook・extract・`hikidashi notes`・`hikidashi add`・引数なしの `hikidash
 2. 引き出しの tmux セッションが無ければ、`hikidashi add` と同じ規則（`has-session` → `new-session`）で作る
 3. `$TMUX` が空でなければ `tmux switch-client -t =<name>` で今のクライアントを切り替え、空なら `tmux attach-session -t =<name>` で繋ぐ
 
-- fzf の一覧は 1 引き出し 1 行で、名前の順（同名は slug の順）に `<name>  <path>` を出す。`<path>` はホーム配下ならホームを `~` に縮める（案件を見分ける末尾が fzf の幅で切られないため）。`hikidashi show` の `path` は絶対パスのまま。各行の先頭に fzf には見せない slug を持たせ、プレビューは `hikidashi show {1}` でそれを受け取る
+- fzf の一覧は 1 引き出し 1 行で、名前の順（同名は slug の順）に `<name>  <path>` を出す。`<path>` はホーム配下ならホームを `~` に縮める（プロジェクトを見分ける末尾が fzf の幅で切られないため）。`hikidashi show` の `path` は絶対パスのまま。各行の先頭に fzf には見せない slug を持たせ、プレビューは `hikidashi show {1}` でそれを受け取る
 - プレビューの出力は fzf へのパイプで端末でないため、fzf に `CLICOLOR_FORCE=1` を渡して色と枠を出させる。`NO_COLOR` があれば渡さない。JSON を読む `gh` には `CLICOLOR_FORCE=0` で色を付けさせない
 - Esc 等で何も選ばずに閉じたら何もせず exit 0 とする。登録済みの引き出しが無ければ fzf を出さずに `hikidashi add` を案内して exit 1 とする
 - Git 管理下で未登録なら、何も開かずに `hikidashi add` を案内して exit 1 とする
-- Git 管理外で一覧に落とすのは、tmux の `display-popup -d /` から全案件を選べるようにするため。案件のセッションはリポジトリのルートで作られ、その中からは一覧を出す手段が他に無い
+- Git 管理外で一覧に落とすのは、tmux の `display-popup -d /` から全プロジェクトを選べるようにするため。プロジェクトのセッションはリポジトリのルートで作られ、その中からは一覧を出す手段が他に無い
 - ターゲットに `=` を付けるのは、`has-session` と同じく前方一致で別のセッションへ移らないため
-- 入力待ちのセッションの pane へ直接は移らない。案件のセッションを開き、その中の window / pane は tmux の操作で選ぶ
+- 入力待ちのセッションの pane へ直接は移らない。プロジェクトのセッションを開き、その中の window / pane は tmux の操作で選ぶ
 - 引数が 2 個以上なら exit 2。未登録・曖昧な名前・fzf や tmux の失敗は、理由を stderr に出して exit 1 とする。見つからないときは tmux に触れない
 
 ### `hikidashi list`
