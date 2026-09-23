@@ -55,6 +55,7 @@ flowchart LR
   ST[hikidashi status] -- 読む --> S
   LS[hikidashi list] -- 読む --> S
   LS -- gh repo view --> GH
+  N -- 読む --> LS
   SH[hikidashi show] -- 読む --> S
   SH -- 読む --> A
   SH -- 読む --> N
@@ -310,10 +311,12 @@ hook・extract・`hikidashi notes`・`hikidashi add`・引数なしの `hikidash
 
 ### `hikidashi list`
 
-- 登録済みの全引き出しを名前の順（同名は slug の順）に、見出し `DRAWER`・`ISSUES`・`RUNNING`・`WAITING`・`IDLE` を持つ角丸の罫線の表で 1 引き出し 1 行に出す。件数の列は右に寄せる
+- 登録済みの全引き出しを名前の順（同名は slug の順）に、見出し `DRAWER`・`ISSUES`・`RUNNING`・`WAITING`・`IDLE`・`NOTES` を持つ角丸の罫線の表で 1 引き出し 1 行に出す。件数の列は右に寄せる
 - slug の列は持たない。同名の引き出しは別々の行に出し、見分けは `hikidashi show <name>` が出す候補の slug で行う
 - 件数は 1 件以上を状態ごとの色（Issue は紫、`running` は緑、`waiting` は橙、`idle` は灰）の太字で示し、0 件と `?` は目立たない色にする
 - 件数の数え方と `?` の扱いは下記「`hikidashi show`」と同じ。Issue は引き出しごとに並行して数える
+- `NOTES` は左寄せで、`notes.md` の最初の空白でない行を前後の空白を削って出す。Markdown の記号（`#`・`- ` 等）は加工しない。`notes.md` が無い・空白だけなら空欄にする。全文は `hikidashi show` で見る
+- `NOTES` は表が出力先の幅（`hikidashi show` と同じ規則）に収まるよう表示幅で `…` に切り詰め、見出しの幅より狭くはしない。幅が得られない（パイプ等）なら切り詰めない
 - 登録済みの引き出しが無ければ `no drawers registered (run hikidashi add in a repository)` を出して exit 0、引数があれば exit 2 とする
 
 ### `hikidashi show`

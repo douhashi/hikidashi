@@ -22,25 +22,111 @@ import (
 
 func TestTableAlignsColumnsAndMarksUnknownIssues(t *testing.T) {
 	summaries := []Summary{
-		{Drawer: drawer.Drawer{Dir: "/data/drawers/api-3f2a9c1b", Name: "api"}, Issues: Issues{Count: 12}, Running: 1, Waiting: 2, Idle: 3},
+		{Drawer: drawer.Drawer{Dir: "/data/drawers/api-3f2a9c1b", Name: "api"}, Issues: Issues{Count: 12}, Running: 1, Waiting: 2, Idle: 3, Note: "# 方針"},
 		{Drawer: drawer.Drawer{Dir: "/data/drawers/api-7e6d5c4b", Name: "api"}, Issues: Issues{Count: 4}},
-		{Drawer: drawer.Drawer{Dir: "/data/drawers/frontend-0a1b2c3d", Name: "frontend"}, Issues: Issues{Err: errors.New("no remote")}},
+		{Drawer: drawer.Drawer{Dir: "/data/drawers/frontend-0a1b2c3d", Name: "frontend"}, Issues: Issues{Err: errors.New("no remote")}, Note: "- fix CI"},
 		{Drawer: drawer.Drawer{Dir: "/data/drawers/x-00000000", Name: "x\x1b[31m"}},
 	}
 
-	got := ansi.Strip(Table(summaries))
+	got := ansi.Strip(Table(summaries, 0))
 
 	// 同名の引き出しも 1 引き出し 1 行で出し、slug の列は持たない（見分けは hikidashi show の候補で行う）。
-	want := "╭──────────┬────────┬─────────┬─────────┬──────╮\n" +
-		"│ DRAWER   │ ISSUES │ RUNNING │ WAITING │ IDLE │\n" +
-		"├──────────┼────────┼─────────┼─────────┼──────┤\n" +
-		"│ api      │     12 │       1 │       2 │    3 │\n" +
-		"│ api      │      4 │       0 │       0 │    0 │\n" +
-		"│ frontend │      ? │       0 │       0 │    0 │\n" +
-		"│ x [31m   │      0 │       0 │       0 │    0 │\n" +
-		"╰──────────┴────────┴─────────┴─────────┴──────╯"
+	// 幅が分からない（0）ときは NOTES を切り詰めない。
+	want := "╭──────────┬────────┬─────────┬─────────┬──────┬──────────╮\n" +
+		"│ DRAWER   │ ISSUES │ RUNNING │ WAITING │ IDLE │ NOTES    │\n" +
+		"├──────────┼────────┼─────────┼─────────┼──────┼──────────┤\n" +
+		"│ api      │     12 │       1 │       2 │    3 │ # 方針   │\n" +
+		"│ api      │      4 │       0 │       0 │    0 │          │\n" +
+		"│ frontend │      ? │       0 │       0 │    0 │ - fix CI │\n" +
+		"│ x [31m   │      0 │       0 │       0 │    0 │          │\n" +
+		"╰──────────┴────────┴─────────┴─────────┴──────┴──────────╯"
 	if got != want {
 		t.Errorf("Table =\n%s\nwant\n%s", got, want)
+	}
+}
+
+func TestTableTruncatesNotesToWidth(t *testing.T) {
+	var summaries []Summary
+	for _, note := range []string{"0123456789abcdef", "本番は触らない", "ok"} {
+		summaries = append(summaries, Summary{Drawer: drawer.Drawer{Dir: "/data/drawers/api-3f2a9c1b", Name: "api"}, Note: note})
+	}
+
+	got := ansi.Strip(Table(summaries, 60))
+
+	// 全角の行も表示幅で切り詰め、全行が揃って 60 桁に収まる。
+	want := "╭────────┬────────┬─────────┬─────────┬──────┬─────────────╮\n" +
+		"│ DRAWER │ ISSUES │ RUNNING │ WAITING │ IDLE │ NOTES       │\n" +
+		"├────────┼────────┼─────────┼─────────┼──────┼─────────────┤\n" +
+		"│ api    │      0 │       0 │       0 │    0 │ 0123456789… │\n" +
+		"│ api    │      0 │       0 │       0 │    0 │ 本番は触ら… │\n" +
+		"│ api    │      0 │       0 │       0 │    0 │ ok          │\n" +
+		"╰────────┴────────┴─────────┴─────────┴──────┴─────────────╯"
+	if got != want {
+		t.Errorf("Table =\n%s\nwant\n%s", got, want)
+	}
+	for _, width := range []int{60, 61, 80} {
+		lines := strings.Split(Table(summaries, width), "\n")
+		top := lipgloss.Width(lines[0])
+		for i, l := range lines {
+			if w := lipgloss.Width(l); w != top || w > width {
+				t.Errorf("width %d: line %d is %d columns (top %d): %q", width, i, w, top, l)
+			}
+		}
+	}
+}
+
+func TestTableKeepsNotesColumnWhenNarrow(t *testing.T) {
+	summaries := []Summary{{Drawer: drawer.Drawer{Dir: "/data/drawers/api-3f2a9c1b", Name: "api"}, Note: "0123456789"}}
+
+	got := ansi.Strip(Table(summaries, 20))
+
+	// 残りの桁が NOTES の見出しより狭くても、見出しの幅までは出す。
+	if want := "│ api    │      0 │       0 │       0 │    0 │ 0123… │"; !strings.Contains(got, want) {
+		t.Errorf("Table =\n%s\nwant a row %q", got, want)
+	}
+}
+
+func TestFirstLineIsTheFirstNonBlankLine(t *testing.T) {
+	for notes, want := range map[string]string{
+		"":                      "",
+		" \n\t\n":               "",
+		"\n  \n  # 見出し  \n本文\n": "# 見出し",
+		"- foo\n- bar\n":        "- foo",
+		" \r\n x\r\n":           "x",
+		"a\x1b[31mb\n":          "a [31mb",
+	} {
+		if got := firstLine(notes); got != want {
+			t.Errorf("firstLine(%q) = %q, want %q", notes, got, want)
+		}
+	}
+}
+
+func TestSummariesReadTheFirstLineOfNotes(t *testing.T) {
+	testutil.NewFakeGh(t)
+	dataRoot := t.TempDir()
+	for name, notes := range map[string]string{"a": "\n- 本番は触らない\n2 行目\n", "b": " \n\t\n"} {
+		d := drawer.Drawer{Dir: filepath.Join(dataRoot, "drawers", name+"-0123abcd"), Path: t.TempDir(), Name: name}
+		if err := d.Register(); err != nil {
+			t.Fatal(err)
+		}
+		testutil.WriteFile(t, d.NotesPath(), notes)
+	}
+	d := drawer.Drawer{Dir: filepath.Join(dataRoot, "drawers", "c-0123abcd"), Path: t.TempDir(), Name: "c"}
+	if err := d.Register(); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := Summaries(dataRoot)
+
+	if err != nil {
+		t.Fatalf("Summaries: %v", err)
+	}
+	var notes []string
+	for _, s := range got {
+		notes = append(notes, s.Note)
+	}
+	if want := []string{"- 本番は触らない", "", ""}; !slices.Equal(notes, want) {
+		t.Errorf("notes = %q, want %q", notes, want)
 	}
 }
 
@@ -89,7 +175,7 @@ func sgr(kind string, c color.Color) string {
 func TestTableColorsCountsByState(t *testing.T) {
 	summaries := []Summary{{Drawer: drawer.Drawer{Dir: "/data/drawers/api-3f2a9c1b", Name: "api"}, Issues: Issues{Count: 1}, Running: 1, Waiting: 1, Idle: 1}}
 
-	got := forceColor(t, Table(summaries))
+	got := forceColor(t, Table(summaries, 0))
 
 	for name, c := range map[string]color.Color{
 		"issues": issuesColor, "running": stateColors[session.Running], "waiting": stateColors[session.Waiting], "idle": stateColors[session.Idle],
