@@ -63,12 +63,15 @@ plugin は起動時に読み込まれるため、動いている Claude Code の
 
 ### tmux に組み込む
 
-`tmux.conf` に、プロジェクトの一覧をポップアップで開くキーバインドと、入力待ちの件数をステータスバーに出す設定を書く。
+`tmux.conf` に、プロジェクトの一覧と備忘録をポップアップで開くキーバインドと、入力待ちの件数をステータスバーに出す設定を書く。
 
 ```tmux
 # prefix + o でプロジェクトの一覧を開く。-E で、切り替えた後や Esc で閉じた後にポップアップも閉じる。
 # -d / で Git 管理外から起動し、常に全プロジェクトの一覧を出す。
 bind-key o display-popup -E -d / -w 90% -h 80% hikidashi open
+
+# prefix + N で、今いるペインのプロジェクトの備忘録（notes.md）を開く。
+bind-key N display-popup -E -d '#{pane_current_path}' -w 80% -h 80% hikidashi notes
 
 # 入力待ちのセッションの件数を出す（0 件なら何も出さない）。
 set -g status-right '#(hikidashi status) %H:%M'
@@ -76,6 +79,8 @@ set -g status-right '#(hikidashi status) %H:%M'
 
 `o` は tmux 既定の「次のペインへ順に移る」（`select-pane -t :.+`）を上書きする。使っているなら空いている別のキーにする。
 `hikidashi` と `fzf` は tmux サーバーの `PATH` から見える場所に置く。
+`#{pane_current_path}` はペインの前面のプロセスの作業ディレクトリなので、Claude Code が動いているペインでもそのプロジェクトの備忘録が開く。
+書き換えた備忘録が動いている Claude Code に渡るのは、次の `SessionStart`（`/clear`・compact・再開）からになる。
 ステータスバーの表示は `status-interval`（既定 15 秒）ごとに更新される。
 
 ### シェルの補完を有効にする
