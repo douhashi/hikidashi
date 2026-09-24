@@ -15,11 +15,13 @@ import (
 
 // command は 1 つのサブコマンド。run はサブコマンド名より後ろの引数と標準入出力を受け取り、終了コードを返す。
 // complete は 1 個目の引数の補完の候補を返す。引数を取らないサブコマンドでは nil とする。
+// sub は子のサブコマンドの表。持てば run と complete は使わず、次の引数を子の名前として引く。
 type command struct {
 	name     string
 	summary  string
 	run      func(args []string, stdin io.Reader, stdout, stderr io.Writer) int
 	complete func() ([]candidate, error)
+	sub      []command
 }
 
 // commands は hikidashi が持つサブコマンドの表。
@@ -33,7 +35,7 @@ var commands = []command{
 	{name: "open", summary: "open the tmux session of a drawer (the current one if omitted, chosen with fzf outside Git)", run: runOpen, complete: drawerCandidates},
 	{name: "remove", summary: "unregister a drawer (the current one if omitted), keeping its non-empty notes", run: runRemove, complete: drawerCandidates},
 	{name: "show", summary: "print the details of a drawer (the current one if omitted)", run: runShow, complete: drawerCandidates},
-	{name: "status", summary: "print the number of sessions waiting for input, for the tmux status bar", run: runStatus},
+	{name: "tmux", summary: "print output for tmux (see \"hikidashi tmux help\")", sub: tmuxCommands},
 	{name: "version", summary: "print the version of hikidashi", run: runVersion},
 }
 
@@ -41,44 +43,58 @@ func main() {
 	os.Exit(run(commands, os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
 
-// run は args の先頭をサブコマンド名として cmds から引き、実行する。
-// 使い方の誤りは exit 2、help の要求は使い方を stdout に出して exit 0 とする。
+// run は隠しコマンドを除き、args を cmds のサブコマンドとして実行する（dispatch）。
 func run(cmds []command, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	if len(args) > 0 {
+		switch args[0] {
+		case "__complete":
+			// commands を参照するため表には載せず、使い方にも出さない。
+			return runComplete(cmds, args[1:], stdout, stderr)
+		case "__preview":
+			// hikidashi open の fzf だけが呼ぶため、表に載せず使い方にも補完にも出さない。
+			return runPreview(args[1:], stdout, stderr)
+		}
+	}
+	return dispatch("hikidashi", cmds, args, stdin, stdout, stderr)
+}
+
+// dispatch は args の先頭をサブコマンド名として cmds から引き、実行する。prog は使い方とエラーに出すコマンドの名前。
+// 子の表を持つサブコマンドなら、残りの引数で子の表を引く。
+// 使い方の誤りは exit 2、help の要求は使い方を stdout に出して exit 0 とする。
+func dispatch(prog string, cmds []command, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		report(stderr, usage(cmds))
+		report(stderr, usage(prog, cmds))
 		return 2
 	}
 
 	name := args[0]
 	switch name {
 	case "help", "-h", "--help":
-		if _, err := io.WriteString(stdout, usage(cmds)); err != nil {
-			report(stderr, fmt.Sprintf("hikidashi: %v\n", err))
+		if _, err := io.WriteString(stdout, usage(prog, cmds)); err != nil {
+			report(stderr, fmt.Sprintf("%s: %v\n", prog, err))
 			return 1
 		}
 		return 0
-	case "__complete":
-		// commands を参照するため表には載せず、使い方にも出さない。
-		return runComplete(cmds, args[1:], stdout, stderr)
-	case "__preview":
-		// hikidashi open の fzf だけが呼ぶため、表に載せず使い方にも補完にも出さない。
-		return runPreview(args[1:], stdout, stderr)
 	}
 
 	for _, c := range cmds {
-		if c.name == name {
-			return c.run(args[1:], stdin, stdout, stderr)
+		if c.name != name {
+			continue
 		}
+		if c.sub != nil {
+			return dispatch(prog+" "+c.name, c.sub, args[1:], stdin, stdout, stderr)
+		}
+		return c.run(args[1:], stdin, stdout, stderr)
 	}
 
-	report(stderr, fmt.Sprintf("hikidashi: unknown command %q\n\n%s", name, usage(cmds)))
+	report(stderr, fmt.Sprintf("%s: unknown command %q\n\n%s", prog, name, usage(prog, cmds)))
 	return 2
 }
 
-// usage は使い方の文面を返す。サブコマンドがあれば名前と概要を揃えて並べる。
-func usage(cmds []command) string {
+// usage は prog の使い方の文面を返す。サブコマンドがあれば名前と概要を揃えて並べる。
+func usage(prog string, cmds []command) string {
 	var b strings.Builder
-	b.WriteString("Usage: hikidashi <command> [arguments]\n")
+	fmt.Fprintf(&b, "Usage: %s <command> [arguments]\n", prog)
 	if len(cmds) == 0 {
 		return b.String()
 	}

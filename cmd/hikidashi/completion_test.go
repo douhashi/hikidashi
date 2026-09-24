@@ -137,7 +137,9 @@ func TestCompleteListsNothingWhereNoArgumentIsTaken(t *testing.T) {
 	for _, words := range [][]string{
 		{"list", ""},
 		{"add", ""},
-		{"status", "a"},
+		{"status", ""},
+		{"tmux", "status", "waiting", ""},
+		{"tmux", "nope", ""},
 		{"unknown", ""},
 		{"open", "api", ""},
 		{"completion", "zsh", ""},
@@ -153,6 +155,22 @@ func TestCompleteListsShellsForCompletion(t *testing.T) {
 
 	if got, want := complete(t, "completion", ""), "zsh\tzsh completion script\nbash\tbash completion script\n"; got != want {
 		t.Errorf("__complete completion = %q, want %q", got, want)
+	}
+}
+
+func TestCompleteFollowsNestedSubcommands(t *testing.T) {
+	isolateHome(t)
+
+	if got := complete(t, "tmux", ""); !strings.HasPrefix(got, "status\t") || strings.Count(got, "\n") != 1 {
+		t.Errorf("__complete tmux = %q, want only status", got)
+	}
+	if got, want := complete(t, "tmux", "status", ""), "running\tClaude is processing a turn\n"+
+		"waiting\tClaude is waiting for a decision in the middle of a turn\n"+
+		"idle\tthe turn is over and Claude is waiting for the next instruction\n"; got != want {
+		t.Errorf("__complete tmux status = %q, want %q", got, want)
+	}
+	if got, want := complete(t, "tmux", "status", "w"), "waiting\tClaude is waiting for a decision in the middle of a turn\n"; got != want {
+		t.Errorf("__complete tmux status w = %q, want %q", got, want)
 	}
 }
 

@@ -95,8 +95,8 @@ func TestRemoveCurrentDrawerStopsRecordingAndListing(t *testing.T) {
 	dataRoot, fake := removeEnv(t)
 	repo, d := newRegisteredRepo(t, dataRoot)
 	statusSession(t, d, "s1", testutil.StartClaude(t), session.Waiting)
-	if _, stdout, _ := invoke(commands, "", "status"); stdout != "1\n" {
-		t.Fatalf("status before remove = %q, want %q", stdout, "1\n")
+	if _, stdout, _ := invoke(commands, "", "tmux", "status", "waiting"); stdout != "1\n" {
+		t.Fatalf("tmux status waiting before remove = %q, want %q", stdout, "1\n")
 	}
 	sub := filepath.Join(repo, "src")
 	if err := os.MkdirAll(sub, 0o700); err != nil {
@@ -107,8 +107,8 @@ func TestRemoveCurrentDrawerStopsRecordingAndListing(t *testing.T) {
 	assertRemove(t, fake, removeOutput(d, false))
 
 	testutil.AssertEntries(t, filepath.Join(dataRoot, "drawers"))
-	if code, stdout, _ := invoke(commands, "", "status"); code != 0 || stdout != "" {
-		t.Errorf("status = %d, %q, want 0 and nothing waiting", code, stdout)
+	if code, stdout, _ := invoke(commands, "", "tmux", "status", "waiting"); code != 0 || stdout != "0\n" {
+		t.Errorf("tmux status waiting = %d, %q, want 0 and nothing waiting", code, stdout)
 	}
 	if entries, err := scan.Collect(dataRoot); err != nil || len(entries) != 0 {
 		t.Errorf("Collect = %+v, err %v, want no sessions to open", entries, err)
