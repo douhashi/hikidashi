@@ -63,7 +63,7 @@ plugin は起動時に読み込まれるため、動いている Claude Code の
 
 ### tmux に組み込む
 
-`tmux.conf` に、プロジェクトの一覧・備忘録・Open な Issue をポップアップで開くキーバインドと、入力待ちの件数をステータスバーに出す設定を書く。
+`tmux.conf` に、プロジェクトの一覧・備忘録・Open な Issue をポップアップで開くキーバインドと、セッションの状態ごとの件数をステータスバーに出す設定を書く。
 
 ```tmux
 # prefix + o でプロジェクトの一覧を開く。-E で、切り替えた後や Esc で閉じた後にポップアップも閉じる。
@@ -76,8 +76,8 @@ bind-key N display-popup -E -d '#{pane_current_path}' -w 80% -h 80% hikidashi no
 # prefix + I で、今いるペインのリポジトリの Open な Issue を選び、ブラウザで開く。
 bind-key I display-popup -E -d '#{pane_current_path}' -w 80% -h 60% "gh issue list --limit 100 | fzf --layout=reverse --delimiter '\t' --with-nth 1,3 | cut -f1 | xargs -r gh issue view --web"
 
-# 入力待ちのセッションの件数を出す（0 件なら何も出さない）。
-set -g status-right '#(hikidashi status) %H:%M'
+# セッションの状態ごとの件数を色分けして出す（0 件の状態は出さず、全部 0 件なら何も出さない）。
+set -g status-right '#(hikidashi tmux status) %H:%M'
 ```
 
 `o` は tmux 既定の「次のペインへ順に移る」（`select-pane -t :.+`）を上書きする。使っているなら空いている別のキーにする。
@@ -88,7 +88,7 @@ set -g status-right '#(hikidashi status) %H:%M'
 
 ### シェルの補完を有効にする
 
-サブコマンド名と、`open`・`show`・`remove` に渡す引き出しの名前を Tab で補完できる。
+サブコマンド名（`tmux status` のような入れ子も含む）と、`open`・`show`・`remove` に渡す引き出しの名前、`tmux status` に渡す状態名を Tab で補完できる。
 
 ```sh
 # zsh: ~/.zshrc の compinit の後に書く
@@ -172,12 +172,22 @@ hikidashi show api
 
 色は端末に出すときだけ付く。パイプの先や `NO_COLOR` を設定したときは色の制御文字を含まない罫線だけのテキストになり、Claude Code に読ませてもそのまま使える。
 
-### 入力待ちの件数を出す（`hikidashi status`）
+### ステータスバーに状態ごとの件数を出す（`hikidashi tmux status`）
 
-入力待ち（`waiting`）のセッションの件数を出す。0 件なら何も出さない。tmux の `status-right` に組み込んで使う（「tmux に組み込む」）。
+セッションの件数を状態ごとに、tmux の書式（`#[fg=...]`）で色分けして出す。tmux の `status-right` に組み込んで使う（「tmux に組み込む」）。
+先頭に引き出しのアイコン（Nerd Font の nf-fa-archive、U+F187）を付け、`running` を `▶`、`waiting` を `?`、`idle` を `✓` の記号と件数で並べる。
+0 件の状態は出さず、全部 0 件ならアイコンも含めて何も出さない。アイコンの表示には Nerd Font が要る。
+
+状態名（`running` / `waiting` / `idle`）を渡すと、その状態の件数だけを色なしの数字で出す（0 件でも `0`）。
+自分で書式を組みたいときに使う。
+
+```sh
+hikidashi tmux status          # 例: <アイコン> ▶1 ?2 ✓3（tmux の書式付き）
+hikidashi tmux status waiting  # 例: 2
+```
 
 件数の代わりに `!` が出たら、集計に失敗している。tmux は理由（stderr）を捨てるため、
-端末で `hikidashi status` を実行して理由を見る。
+端末で `hikidashi tmux status` を実行して理由を見る。
 
 ### 備忘録を書く（`hikidashi notes`）
 

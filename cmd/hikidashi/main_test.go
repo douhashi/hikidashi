@@ -99,6 +99,7 @@ func TestUsageListsCommands(t *testing.T) {
 	cmds := []command{
 		{name: "hook", summary: "record the session state"},
 		{name: "status", summary: "print the number of waiting sessions"},
+		{name: "tmux", summary: "tmux integration", sub: []command{{name: "nested", summary: "must not be listed"}}},
 	}
 
 	_, stdout, _ := invoke(cmds, "", "help")
@@ -106,10 +107,14 @@ func TestUsageListsCommands(t *testing.T) {
 	for _, want := range []string{
 		"hook    record the session state",
 		"status  print the number of waiting sessions",
+		"tmux    tmux integration",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("stdout = %q, want line %q", stdout, want)
 		}
+	}
+	if strings.Contains(stdout, "nested") {
+		t.Errorf("stdout = %q, want nested commands hidden", stdout)
 	}
 }
 
@@ -151,5 +156,25 @@ func TestRunDispatchesToCommand(t *testing.T) {
 	}
 	if stdout != "out" || stderr != "err" {
 		t.Errorf("stdout, stderr = %q, %q, want %q, %q", stdout, stderr, "out", "err")
+	}
+}
+
+func TestRunDispatchesToNestedCommand(t *testing.T) {
+	var gotArgs []string
+	cmds := []command{{name: "tmux", sub: []command{
+		{name: "status", run: func(args []string, _ io.Reader, stdout, _ io.Writer) int {
+			gotArgs = args
+			_, _ = io.WriteString(stdout, "out")
+			return 3
+		}},
+	}}}
+
+	code, stdout, stderr := invoke(cmds, "", "tmux", "status", "waiting")
+
+	if code != 3 || stdout != "out" || stderr != "" {
+		t.Errorf("tmux status = %d, stdout %q, stderr %q, want 3, %q and silent", code, stdout, stderr, "out")
+	}
+	if want := []string{"waiting"}; !slices.Equal(gotArgs, want) {
+		t.Errorf("args = %q, want %q", gotArgs, want)
 	}
 }

@@ -89,20 +89,25 @@ func runComplete(cmds []command, words []string, stdout, stderr io.Writer) int {
 }
 
 // candidates は補完中の語より前の語 before から、補完中の語の候補を返す。
-// 1 語目ならサブコマンド、2 語目ならそのサブコマンドの引数の候補とし、それ以外は候補を持たない。
+// 語が無ければ cmds のサブコマンドを候補とする。先頭の語が子の表を持つサブコマンドなら残りの語で子の表を辿り、
+// そうでなければ 1 語のときだけそのサブコマンドの引数の候補とする。それ以外は候補を持たない。
 func candidates(cmds []command, before []string) ([]candidate, error) {
-	switch len(before) {
-	case 0:
+	if len(before) == 0 {
 		cands := make([]candidate, 0, len(cmds))
 		for _, c := range cmds {
 			cands = append(cands, candidate{value: c.name, description: c.summary})
 		}
 		return cands, nil
-	case 1:
-		for _, c := range cmds {
-			if c.name == before[0] && c.complete != nil {
-				return c.complete()
-			}
+	}
+	for _, c := range cmds {
+		if c.name != before[0] {
+			continue
+		}
+		if c.sub != nil {
+			return candidates(c.sub, before[1:])
+		}
+		if len(before) == 1 && c.complete != nil {
+			return c.complete()
 		}
 	}
 	return nil, nil

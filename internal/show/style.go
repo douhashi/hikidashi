@@ -19,12 +19,21 @@ var (
 	drawerColor = lipgloss.Color("#82aaff") // 引き出しの枠
 	badgeText   = lipgloss.Color("#16181d") // 状態の札の文字
 	// stateColors は実効の状態ごとの色。list の件数、show のセッションの枠と札に使う。
-	stateColors = map[session.State]color.Color{
-		session.Running: lipgloss.Color("#86d49a"),
-		session.Waiting: lipgloss.Color("#ffb454"),
-		session.Idle:    lipgloss.Color("#9aa4b2"),
-	}
+	stateColors = func() map[session.State]color.Color {
+		m := make(map[session.State]color.Color, len(StateHex))
+		for state, hex := range StateHex {
+			m[state] = lipgloss.Color(hex)
+		}
+		return m
+	}()
 )
+
+// StateHex は実効の状態ごとの色の 16 進表記。stateColors と、hikidashi tmux status の tmux の書式が共有する。
+var StateHex = map[session.State]string{
+	session.Running: "#86d49a",
+	session.Waiting: "#ffb454",
+	session.Idle:    "#9aa4b2",
+}
 
 var (
 	plain  = lipgloss.NewStyle()

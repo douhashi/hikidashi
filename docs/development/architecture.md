@@ -58,7 +58,7 @@ flowchart LR
   O -- 読む --> S
   N -- 読む --> O
   O -- gh repo view --> GH
-  ST[hikidashi status] -- 読む --> S
+  ST[hikidashi tmux status] -- 読む --> S
   LS[hikidashi list] -- 読む --> S
   LS -- gh repo view --> GH
   N -- 読む --> LS
@@ -82,7 +82,7 @@ flowchart LR
 | `hikidashi hook` | hook から起動 | 登録済みの引き出しへの状態の記録、備忘録の注入 |
 | `hikidashi extract` | `Stop` の async hook から起動 | transcript の末尾から次アクションを抽出する |
 | `hikidashi open` | 人間が端末・tmux の `display-popup` から起動 | プロジェクトの tmux セッションを（無ければ作って）開く。fzf のプレビューは隠しコマンド `hikidashi __preview` で描く |
-| `hikidashi status` | tmux の `status-right` から起動 | 入力待ちの件数を出す |
+| `hikidashi tmux status` | tmux の `status-right` から起動 | 状態ごとのセッションの件数を出す |
 | `hikidashi list` | 人間・skill から呼んだ Claude Code が起動 | 全プロジェクトの概況を出す |
 | `hikidashi show` | 人間・skill から呼んだ Claude Code が起動 | 1 プロジェクト（省略時は作業ディレクトリのプロジェクト）の詳細を出す |
 | `hikidashi notes` | 人間が起動 | 現在の引き出しの `notes.md` を `$EDITOR` で開く |
@@ -145,7 +145,7 @@ stateDiagram-v2
 ユーザーが Esc で中断すると、`Stop` も `Notification`（`idle_prompt` を含む）も発火せず、状態を変える hook が無い。
 一方 transcript には、中断の記録として `[Request interrupted by user]`（ツール実行中は `[Request interrupted by user for tool use]`）で始まる `user` のエントリが残る。
 
-- 読み手（`status` / `list` / `show`）は、`running` / `waiting` のセッションについて transcript の末尾を読み、最後の `user` のエントリが中断の記録で、その時刻が `state_changed_at` より後なら `idle` として扱う
+- 読み手（`tmux status` / `list` / `show`）は、`running` / `waiting` のセッションについて transcript の末尾を読み、最後の `user` のエントリが中断の記録で、その時刻が `state_changed_at` より後なら `idle` として扱う
 - セッションのファイルは書き換えない（書き手は hook だけ）。次の `UserPromptSubmit` で hook が正しい状態に戻す
 
 ### バックグラウンドのタスクの扱い
@@ -245,7 +245,7 @@ hook・extract・`hikidashi notes`・`hikidashi add`・引数なしの `hikidash
 ### `hikidashi remove`
 
 1. 対象の引き出しを決める。引数が無ければ作業ディレクトリから上記の規則で、1 個あれば登録済みの引き出しから名前で引く
-2. `drawer.json` を先に消して登録を外す（以後 hook・extract・`open`・`status`・`list`・`show` の対象外になる）。次に `notes.md` 以外（`sessions/`）を消す。`notes.md` が無い・空白だけなら引き出しのディレクトリごと消す
+2. `drawer.json` を先に消して登録を外す（以後 hook・extract・`open`・`tmux status`・`list`・`show` の対象外になる）。次に `notes.md` 以外（`sessions/`）を消す。`notes.md` が無い・空白だけなら引き出しのディレクトリごと消す
 3. `drawer: <slug> (removed)` を stdout に出し、備忘録を残したときだけ `notes: <notes.md の絶対パス> (kept)` を続ける
 
 - 名前は slug の完全一致を優先し、無ければ `name` が一意に一致する引き出しとする。`name` が複数に一致すれば候補の slug を出してエラーにする。この解決は `hikidashi open`・`hikidashi show` と共有する
@@ -288,14 +288,15 @@ hook・extract・`hikidashi notes`・`hikidashi add`・引数なしの `hikidash
 
 - `SessionEnd` で `<session_id>.*` を消す。`--resume` で戻れば `SessionStart` で作り直される
 - `SessionEnd` は `/exit` や pane の kill（SIGHUP）では発火するが、SIGKILL やクラッシュでは発火しない
-- 取り残されたファイルは、読み手（`status` / `list` / `show`）が `claude_pid` のプロセスが生きていてプロセス名が `claude` であることを確かめ、そうでなければ消す
+- 取り残されたファイルは、読み手（`tmux status` / `list` / `show`）が `claude_pid` のプロセスが生きていてプロセス名が `claude` であることを確かめ、そうでなければ消す
 - pane の存在では生死を判定しない。claude が死んでも pane はシェルに戻って残るため
 - 読み手が消すのは原則 2 の例外だが、消すのは書き手が二度と書かないファイルに限るため競合しない
 
 ## UI
 
 - 状態と放置時間は中断とバックグラウンドのタスクを反映した実効の値で出す（上記「中断の扱い」「バックグラウンドのタスクの扱い」）。放置時間はその状態に入ってからの経過で、`5m` / `3h` / `2d` の形に切り捨てる
-- `hikidashi status` は `waiting` の件数だけを出す。0 件なら何も出さない。出力は件数と改行のみで、引数があれば exit 2、失敗は `!` を出して exit 1 とする
+- `hikidashi tmux status` は引数なしで、Nerd Font のアイコン（U+F187）に続けて `running` `▶`・`waiting` `?`・`idle` `✓` の記号と件数を tmux の書式（`#[fg=...]`、色は `list` と同じ）で空白区切りに並べ、`#[default]` で色を戻す。0 件の状態は出さず、全部 0 件なら何も出さない
+- 状態名を 1 個渡すと、その状態の件数を色なしの数字と改行だけで出す（0 件でも `0`）。それ以外の引数は stdout に何も出さず exit 2、集計の失敗は `!` を出して exit 1 とする
 - `hikidashi list` は罫線付きの表、`hikidashi show` は角丸の枠で出し、状態を色で示す（下記「`hikidashi list`」「`hikidashi show`」）。表と枠は lipgloss で組む
 - 色は常に付け、書き出すときに colorprofile が落とす。stdout が端末でない（パイプ・skill から呼んだ Claude Code）か `NO_COLOR` があれば色の制御文字を出さず、罫線だけのテキストになる。`CLICOLOR_FORCE` があれば端末でなくても色を残す
 - tmux への組み込み（キーバインドと `status-right`）はユーザーが `tmux.conf` に書く。hikidashi は `tmux.conf` を書き換えない
@@ -348,7 +349,7 @@ hook・extract・`hikidashi notes`・`hikidashi add`・引数なしの `hikidash
 
 - `hikidashi completion <zsh|bash>` は補完スクリプトを stdout に出す。zsh は compinit の後に `source <(hikidashi completion zsh)`、bash は `source <(hikidashi completion bash)` で有効にする
 - スクリプトは Tab のたびに `hikidashi __complete <hikidashi より後ろの語...>` を呼び、最後の語を接頭辞とする候補を `値 TAB 説明` の行で受け取る。候補の決め方は Go 側に集め、スクリプトは受け渡しだけをする
-- 候補は 1 語目ならサブコマンド（説明は概要）、2 語目なら `open`・`show`・`remove` は登録済みの引き出し、`completion` は `zsh`・`bash` とし、それ以外は出さない
+- 候補は 1 語目ならサブコマンド（説明は概要）、2 語目なら `open`・`show`・`remove` は登録済みの引き出し、`completion` は `zsh`・`bash` とし、それ以外は出さない。子のサブコマンドを持つ `tmux` は、2 語目を子（`status`）、3 語目をその引数（状態名）として同じ規則で辿る
 - 引き出しの候補は毎回 `drawer.json` を読むため、`add`・`remove` の直後から反映される。名前の順（同名は slug の順）に並べ、説明はパス（ホーム配下は `~` 始まり）とする
 - 引き出しの値は、`name` が一意でどの slug とも一致しなければ `name`、それ以外は slug とする。上記「`hikidashi remove`」の規則で必ずその引き出しに当たり、曖昧エラーにならない
 - zsh は `_describe`、bash は bash-completion に頼らず `complete -F` で渡す。どちらも `hikidashi __complete` の stderr は捨てる

@@ -50,7 +50,7 @@ func TestListCountsStatesAndIssuesPerDrawer(t *testing.T) {
 	if n := strings.Count(stderr, "\n"); n != 1 {
 		t.Errorf("stderr has %d lines, want 1: %q", n, stderr)
 	}
-	// 死んだ claude のセッションは数えず、ファイルも消える（open / status と同じ後始末）。
+	// 死んだ claude のセッションは数えず、ファイルも消える（open / tmux status と同じ後始末）。
 	testutil.AssertEntries(t, filepath.Join(api.Dir, "sessions"), "i1.json", "i2.json", "r1.json", "w1.json")
 }
 
