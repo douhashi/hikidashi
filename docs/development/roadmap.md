@@ -4,8 +4,6 @@
 
 ## 予定（上から着手順）
 
-- [ ] tmux status の記号を Nerd Font に替え件数と離す。 → #111
-
 ## 完了
 
 - [x] データの置き場をリポジトリ外の `~/.hikidashi/drawers/` に決める。
@@ -45,3 +43,4 @@
 - [x] status を tmux status に移し 3 状態を出す。 → #99
 - [x] Go の間接の依存を最新に上げる。 → #106
 - [x] checkout を v7 に上げ Ubuntu 26 で通るか確かめる。 → #105
+- [x] tmux status の記号を Nerd Font に替え件数と離す。 → #111
