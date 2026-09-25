@@ -60,7 +60,7 @@ func TestTmuxStatusCountsEffectiveStates(t *testing.T) {
 		`{"type":"user","isSidechain":false,"message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user]"}]},"timestamp":"2026-09-23T10:10:00Z"}`+"\n")
 
 	// 死んだ claude のセッションは数えず、中断したセッションは idle として数える。
-	if got, want := tmuxStatus(t), "\uf187 #[fg=#86d49a]▶1 #[fg=#ffb454]?2 #[fg=#9aa4b2]✓2#[default]\n"; got != want {
+	if got, want := tmuxStatus(t), "\uf187 #[fg=#86d49a]\uf04b 1 #[fg=#ffb454]\uf128 2 #[fg=#9aa4b2]\uf00c 2#[default]\n"; got != want {
 		t.Errorf("tmux status = %q, want %q", got, want)
 	}
 	for state, want := range map[string]string{"running": "1\n", "waiting": "2\n", "idle": "2\n"} {
@@ -78,7 +78,7 @@ func TestTmuxStatusOmitsStatesWithoutSessions(t *testing.T) {
 	statusSession(t, d, "w", pid, session.Waiting)
 	statusSession(t, d, "i", pid, session.Idle)
 
-	if got, want := tmuxStatus(t), "\uf187 #[fg=#ffb454]?1 #[fg=#9aa4b2]✓1#[default]\n"; got != want {
+	if got, want := tmuxStatus(t), "\uf187 #[fg=#ffb454]\uf128 1 #[fg=#9aa4b2]\uf00c 1#[default]\n"; got != want {
 		t.Errorf("tmux status = %q, want %q", got, want)
 	}
 	if got := tmuxStatus(t, "running"); got != "0\n" {

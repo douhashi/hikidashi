@@ -295,7 +295,7 @@ hook・extract・`hikidashi notes`・`hikidashi add`・引数なしの `hikidash
 ## UI
 
 - 状態と放置時間は中断とバックグラウンドのタスクを反映した実効の値で出す（上記「中断の扱い」「バックグラウンドのタスクの扱い」）。放置時間はその状態に入ってからの経過で、`5m` / `3h` / `2d` の形に切り捨てる
-- `hikidashi tmux status` は引数なしで、Nerd Font のアイコン（U+F187）に続けて `running` `▶`・`waiting` `?`・`idle` `✓` の記号と件数を tmux の書式（`#[fg=...]`、色は `list` と同じ）で空白区切りに並べ、`#[default]` で色を戻す。0 件の状態は出さず、全部 0 件なら何も出さない
+- `hikidashi tmux status` は引数なしで、Nerd Font のアイコン（U+F187）に続けて `running` nf-fa-play（U+F04B）・`waiting` nf-fa-question（U+F128）・`idle` nf-fa-check（U+F00C）の記号と件数を、字形が 1 マスを超えても件数に重ならないよう間に空白を挟んで、tmux の書式（`#[fg=...]`、色は `list` と同じ）で空白区切りに並べ、`#[default]` で色を戻す。0 件の状態は出さず、全部 0 件なら何も出さない
 - 状態名を 1 個渡すと、その状態の件数を色なしの数字と改行だけで出す（0 件でも `0`）。それ以外の引数は stdout に何も出さず exit 2、集計の失敗は `!` を出して exit 1 とする
 - `hikidashi list` は罫線付きの表、`hikidashi show` は角丸の枠で出し、状態を色で示す（下記「`hikidashi list`」「`hikidashi show`」）。表と枠は lipgloss で組む
 - 色は常に付け、書き出すときに colorprofile が落とす。stdout が端末でない（パイプ・skill から呼んだ Claude Code）か `NO_COLOR` があれば色の制御文字を出さず、罫線だけのテキストになる。`CLICOLOR_FORCE` があれば端末でなくても色を残す
