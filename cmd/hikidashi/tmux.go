@@ -22,15 +22,15 @@ var tmuxCommands = []command{
 	{name: "status", summary: "print the number of sessions by state for the status bar, or that of one state", run: runTmuxStatus, complete: stateCandidates},
 }
 
-// tmuxStates は hikidashi tmux status が扱う状態。要約はこの順に並べる。
+// tmuxStates は hikidashi tmux status が扱う状態。要約はこの順に並べる。記号は Nerd Font の字形。
 var tmuxStates = []struct {
 	state       session.State
 	symbol      string
 	description string
 }{
-	{state: session.Running, symbol: "▶", description: "Claude is processing a turn"},
-	{state: session.Waiting, symbol: "?", description: "Claude is waiting for a decision in the middle of a turn"},
-	{state: session.Idle, symbol: "✓", description: "the turn is over and Claude is waiting for the next instruction"},
+	{state: session.Running, symbol: "\uf04b", description: "Claude is processing a turn"},                                  // nf-fa-play
+	{state: session.Waiting, symbol: "\uf128", description: "Claude is waiting for a decision in the middle of a turn"},     // nf-fa-question
+	{state: session.Idle, symbol: "\uf00c", description: "the turn is over and Claude is waiting for the next instruction"}, // nf-fa-check
 }
 
 // runTmuxStatus は hikidashi tmux status の入口。tmux の status-right の #() から呼ばれる。
@@ -71,13 +71,14 @@ func knownTmuxState(state session.State) bool {
 	return false
 }
 
-// tmuxSummary は counts のうち 1 件以上の状態を、tmux の書式で色分けした記号と件数にして空白区切りで並べる。
+// tmuxSummary は counts のうち 1 件以上の状態を、tmux の書式で色分けした記号・空白・件数にして空白区切りで並べる。
+// 記号と件数の間の空白は、Nerd Font の字形が 1 マスを超えて描かれても件数に重ならないようにするため。
 // 先頭にアイコン、末尾に後続の表示の色を戻す #[default] と改行を付ける。全部 0 件なら空を返す。
 func tmuxSummary(counts map[session.State]int) string {
 	var parts []string
 	for _, s := range tmuxStates {
 		if n := counts[s.state]; n > 0 {
-			parts = append(parts, fmt.Sprintf("#[fg=%s]%s%d", show.StateHex[s.state], s.symbol, n))
+			parts = append(parts, fmt.Sprintf("#[fg=%s]%s %d", show.StateHex[s.state], s.symbol, n))
 		}
 	}
 	if len(parts) == 0 {

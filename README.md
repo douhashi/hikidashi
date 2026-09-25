@@ -175,14 +175,14 @@ hikidashi show api
 ### ステータスバーに状態ごとの件数を出す（`hikidashi tmux status`）
 
 セッションの件数を状態ごとに、tmux の書式（`#[fg=...]`）で色分けして出す。tmux の `status-right` に組み込んで使う（「tmux に組み込む」）。
-先頭に引き出しのアイコン（Nerd Font の nf-fa-archive、U+F187）を付け、`running` を `▶`、`waiting` を `?`、`idle` を `✓` の記号と件数で並べる。
-0 件の状態は出さず、全部 0 件ならアイコンも含めて何も出さない。アイコンの表示には Nerd Font が要る。
+先頭に引き出しのアイコン（Nerd Font の nf-fa-archive、U+F187）を付け、`running` を nf-fa-play（U+F04B）、`waiting` を nf-fa-question（U+F128）、`idle` を nf-fa-check（U+F00C）の記号と、空白を挟んだ件数で並べる。
+0 件の状態は出さず、全部 0 件ならアイコンも含めて何も出さない。アイコンと記号の表示には Nerd Font が要る。
 
 状態名（`running` / `waiting` / `idle`）を渡すと、その状態の件数だけを色なしの数字で出す（0 件でも `0`）。
 自分で書式を組みたいときに使う。
 
 ```sh
-hikidashi tmux status          # 例: <アイコン> ▶1 ?2 ✓3（tmux の書式付き）
+hikidashi tmux status          # 例: <アイコン> <記号> 1 <記号> 2 <記号> 3（tmux の書式付き）
 hikidashi tmux status waiting  # 例: 2
 ```
 
