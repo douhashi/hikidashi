@@ -1,0 +1,121 @@
+name: Verify ubuntu-26.04
+
+# Issue #105 の一時検証用。ubuntu-latest が 26.04 に移る前に、CI とリリース相当の処理が
+# ubuntu-26.04 で通ることを公開なしに確かめる。記録を取った後に削除し、main には残さない。
+on:
+  push:
+    branches: [impl-105]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # ci.yml の changes 相当（fetch-depth: 2 で HEAD^1 との差分が取れること）。
+  changes:
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+
+      - name: Detect changes outside docs/
+        run: |
+          git diff --name-only HEAD^1 HEAD
+          if git diff --quiet HEAD^1 HEAD -- . ':(exclude)docs/'; then
+            echo "code=false"
+          else
+            echo "code=true"
+          fi
+
+  # ci.yml の docs 相当。
+  docs:
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup mise
+        uses: jdx/mise-action@v4
+
+      - name: Lint docs
+        run: mise run lint:docs
+
+  # ci.yml の full（linux）相当。
+  full:
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup mise
+        uses: jdx/mise-action@v4
+
+      - name: Full check
+        run: mise run check
+
+  # release.yml の release 相当。push しないローカル一時タグで snapshot ビルドする。
+  release:
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup mise
+        uses: jdx/mise-action@v4
+
+      - name: Tag locally (not pushed)
+        run: |
+          git tag v0.0.0-ubuntu26
+          git tag --list
+
+      - name: Snapshot build
+        run: mise exec -- goreleaser release --snapshot --clean
+
+      - name: Upload binaries
+        uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          # binary 形式の配布名（hikidashi_<os>_<arch>）は Releases 上の名前で、dist/ では
+          # <project>_<os>_<arch>_<variant>/hikidashi に置かれる。
+          path: dist/*/hikidashi
+          if-no-files-found: error
+
+  # release.yml の verify 相当（linux は 26.04 世代で揃える）。
+  verify:
+    needs: release
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-26.04
+            asset: hikidashi_linux_amd64
+          - runner: ubuntu-26.04-arm
+            asset: hikidashi_linux_arm64
+          - runner: macos-latest
+            asset: hikidashi_darwin_arm64
+          - runner: macos-15-intel
+            asset: hikidashi_darwin_amd64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Download
+        uses: actions/download-artifact@v8
+        with:
+          name: dist
+
+      - name: Verify version
+        run: |
+          bin="$(echo "$ASSET"_*/hikidashi)"
+          ls -l "$bin"
+          chmod +x "$bin"
+          got="$("./$bin" version)"
+          echo "hikidashi version: $got"
+          if [ "$got" != "$WANT" ]; then
+            echo "::error::version is $got, want $WANT"
+            exit 1
+          fi
+        env:
+          ASSET: ${{ matrix.asset }}
+          WANT: v0.0.0-ubuntu26

@@ -95,5 +95,6 @@ git push origin v0.1.0
 
 `mise run release`（GoReleaser）が linux・darwin × amd64・arm64 のバイナリと `checksums.txt` を Releases に載せる。
 続くジョブが 4 組の runner で成果物を落とし、`hikidashi version` がタグ名を出すことを照合する。
+runner は latest のある x64 を `*-latest` で指して OS 更新に追従し、latest の無い linux arm は `ubuntu-latest` と同じ世代に版を固定して 2 arch の OS 世代を揃える。
 
 公開せずに手元で確かめるときは `goreleaser release --snapshot --clean` を使う（出力は `dist/`）。
